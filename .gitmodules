@@ -1,0 +1,6 @@
+[submodule "components/VL53L5CX-Library"]
+	path = components/VL53L5CX-Library
+	url = https://github.com/RJRP44/VL53L5CX-Library.git
+[submodule "components/esp32_BNO08x"]
+	path = components/esp32_BNO08x
+	url = https://github.com/myles-parfeniuk/esp32_BNO08x.git
