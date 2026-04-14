@@ -27,8 +27,8 @@
 #include "vl53l5cx_api.h"
 
 // Update these GPIOs to match your ESP32 wiring.
-static constexpr gpio_num_t VL53L5CX_PIN_SDA = GPIO_NUM_21;
-static constexpr gpio_num_t VL53L5CX_PIN_SCL = GPIO_NUM_22;
+static constexpr gpio_num_t VL53L5CX_PIN_SDA = GPIO_NUM_15;
+static constexpr gpio_num_t VL53L5CX_PIN_SCL = GPIO_NUM_16;
 static constexpr gpio_num_t VL53L5CX_PIN_INT = GPIO_NUM_NC;
 static constexpr gpio_num_t VL53L5CX_PIN_I2C_RST = GPIO_NUM_NC;
 static constexpr gpio_num_t VL53L5CX_PIN_LPN = GPIO_NUM_5;
