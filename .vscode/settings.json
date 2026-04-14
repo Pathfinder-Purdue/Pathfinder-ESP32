@@ -1,0 +1,11 @@
+{
+    "idf.currentSetup": "c:\\Espressif\\frameworks\\esp-idf-v5.5.1",
+    "idf.flashType": "UART",
+    "idf.portWin": "COM7",
+    "idf.openOcdConfigs": [
+        "board/esp32-wrover-kit-3.3v.cfg"
+    ],
+    "idf.customExtraVars": {
+        "IDF_TARGET": "esp32"
+    }
+}

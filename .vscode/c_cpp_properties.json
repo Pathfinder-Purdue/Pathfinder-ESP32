@@ -1,0 +1,27 @@
+{
+  "version": 4,
+  "configurations": [
+    {
+      "name": "ESP-IDF",
+      "includePath": [
+        "${workspaceFolder}/**",
+        "c:/Espressif/frameworks/esp-idf-v5.5.1/components/**",
+        "${workspaceFolder}/main",
+        "${workspaceFolder}/components/esp32_BNO08x/include",
+        "${workspaceFolder}/components/VL53L5CX-Library/include"
+      ],
+      "browse": {
+        "path": [
+          "${workspaceFolder}",
+          "c:/Espressif/frameworks/esp-idf-v5.5.1/components"
+        ],
+        "limitSymbolsToIncludedHeaders": true
+      },
+      "defines": [],
+      "compilerPath": "c:\\Espressif\\frameworks\\esp-idf-v5.5.1\\tools\\tools\\xtensa-esp-elf\\esp-14.2.0_20241119\\xtensa-esp-elf\\bin\\xtensa-esp32-elf-gcc.exe",
+      "cStandard": "c17",
+      "cppStandard": "c++17",
+      "intelliSenseMode": "windows-gcc-x64"
+    }
+  ]
+}
