@@ -24,6 +24,7 @@
 #include <cstdint>
 #include <cstring>
 #include "vl53l5cx_api.h"
+#include "esp_check.h"
 
 
 #define UART_PORT_NUM      UART_NUM_1
@@ -58,7 +59,8 @@
 #define I2C_MASTER_FREQ_HZ   400000   // u-blox supports 400 kHz
 #define I2C_MASTER_TIMEOUT_MS 1000
 
-#define UBLOX_I2C_ADDR       0x42     // 7-bit address
+//#define UBLOX_I2C_ADDR       0x42     // 7-bit address
+#define UBLOX_I2C_ADDR 0x21
 
 #define PWM_GPIO_1        35
 #define PWM_GPIO_2        36
@@ -74,7 +76,6 @@
 #define PWM_CHANNEL_2     LEDC_CHANNEL_2
 #define PWM_CHANNEL_3     LEDC_CHANNEL_3
 #define PWM_CHANNEL_4     LEDC_CHANNEL_4
-
 
 
 
@@ -102,6 +103,26 @@ typedef struct {
 
 QueueHandle_t sensorQueue;
 
+
+// From nonfunctional GPS integration
+/*
+static i2c_master_bus_handle_t g_i2c_bus = nullptr;
+static i2c_master_dev_handle_t g_gps_dev = nullptr;
+static i2c_master_dev_handle_t g_tof_dev = nullptr;
+*/
+
+
+// From functional TOF code
+static constexpr gpio_num_t VL53L5CX_PIN_SDA = GPIO_NUM_15;
+static constexpr gpio_num_t VL53L5CX_PIN_SCL = GPIO_NUM_16;
+static constexpr gpio_num_t VL53L5CX_PIN_INT = GPIO_NUM_NC;
+static constexpr gpio_num_t VL53L5CX_PIN_I2C_RST = GPIO_NUM_NC;
+static constexpr gpio_num_t VL53L5CX_PIN_LPN = GPIO_NUM_5;
+static constexpr gpio_num_t VL53L5CX_PIN_PWREN = GPIO_NUM_NC;
+
+static constexpr i2c_port_num_t VL53L5CX_I2C_PORT = I2C_NUM_0;
+static constexpr uint32_t VL53L5CX_I2C_SPEED_HZ = 100000;
+static constexpr uint32_t VL53L5CX_PROBE_TIMEOUT_MS = 200;
 
 
 static const uint32_t MAX_DUTY = (1U << 10) - 1;
@@ -209,7 +230,113 @@ static void uart_task(void *pvParameters)
     }
 }
 
+// Nonfunctional GPS I2C shared line implementation
+/*
+// GPS I2C initialization
+static void i2c_init(void)
+{
+    i2c_master_bus_config_t bus_cfg = {};
+    bus_cfg.i2c_port = I2C_NUM_0;
+    bus_cfg.sda_io_num = (gpio_num_t)I2C_MASTER_SDA_IO;   // 15
+    bus_cfg.scl_io_num = (gpio_num_t)I2C_MASTER_SCL_IO;   // 16
+    bus_cfg.clk_source = I2C_CLK_SRC_DEFAULT;
+    bus_cfg.glitch_ignore_cnt = 7;
+    bus_cfg.flags.enable_internal_pullup = true;
 
+    ESP_ERROR_CHECK(i2c_new_master_bus(&bus_cfg, &g_i2c_bus));
+
+    // GPS device
+    i2c_device_config_t gps_cfg = {};
+    gps_cfg.dev_addr_length = I2C_ADDR_BIT_LEN_7;
+    gps_cfg.device_address = UBLOX_I2C_ADDR;   // keep this same as your working GPS setup
+    gps_cfg.scl_speed_hz = I2C_MASTER_FREQ_HZ;
+    gps_cfg.scl_wait_us = 0;
+
+    ESP_ERROR_CHECK(i2c_master_bus_add_device(g_i2c_bus, &gps_cfg, &g_gps_dev));
+
+    // TOF device
+    i2c_device_config_t tof_cfg = {};
+    tof_cfg.dev_addr_length = I2C_ADDR_BIT_LEN_7;
+    tof_cfg.device_address = (VL53L5CX_DEFAULT_I2C_ADDRESS >> 1);  // usually 0x29
+    tof_cfg.scl_speed_hz = I2C_MASTER_FREQ_HZ;
+    tof_cfg.scl_wait_us = 0;
+
+    ESP_ERROR_CHECK(i2c_master_bus_add_device(g_i2c_bus, &tof_cfg, &g_tof_dev));
+
+    ESP_LOGI("I2C", "Shared I2C bus initialized for GPS + TOF");
+}
+
+// GPS I2C Task
+static void i2c_gps_task(void *pvParameters)
+{
+    uint8_t buffer[128];
+
+    ESP_LOGI("GPS_I2C", "GPS task started");
+
+    while (1) {
+        uint8_t len_reg = 0xFD;
+        uint8_t len_bytes[2] = {0};
+
+        esp_err_t err = i2c_master_transmit_receive(
+            g_gps_dev,
+            &len_reg,
+            1,
+            len_bytes,
+            2,
+            I2C_MASTER_TIMEOUT_MS
+        );
+
+        if (err != ESP_OK) {
+            if (err == ESP_ERR_TIMEOUT) {
+                ESP_LOGW("GPS_I2C", "Length read timeout");
+            } else {
+                ESP_LOGE("GPS_I2C", "Length read failed: %s", esp_err_to_name(err));
+            }
+            vTaskDelay(pdMS_TO_TICKS(100));
+            continue;
+        }
+
+        uint16_t available = ((uint16_t)len_bytes[0] << 8) | len_bytes[1];
+        ESP_LOGI("GPS_I2C", "len bytes: 0x%02X 0x%02X, available=%u",
+                 len_bytes[0], len_bytes[1], available);
+
+        if (available == 0) {
+            ESP_LOGI("GPS_I2C", "No GPS data available yet");
+            vTaskDelay(pdMS_TO_TICKS(100));
+            continue;
+        }
+
+        if (available > sizeof(buffer)) {
+            available = sizeof(buffer);
+        }
+
+        uint8_t stream_reg = 0xFF;
+
+        err = i2c_master_transmit_receive(
+            g_gps_dev,
+            &stream_reg,
+            1,
+            buffer,
+            available,
+            I2C_MASTER_TIMEOUT_MS
+        );
+
+        if (err == ESP_OK) {
+            printf("I2C RX: ");
+            fwrite(buffer, 1, available, stdout);
+            printf("\n");
+        } else if (err == ESP_ERR_TIMEOUT) {
+            ESP_LOGW("GPS_I2C", "Stream read timeout");
+        } else {
+            ESP_LOGE("GPS_I2C", "Stream read failed: %s", esp_err_to_name(err));
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+*/
+
+// Functional Independent GPS I2C implementation
 // GPS I2C initialization
 static void i2c_init(void)
 {
@@ -326,7 +453,6 @@ static void i2c_gps_task(void *pvParameters)
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
-
 
 
 
@@ -619,301 +745,156 @@ static void imu_task(void *pvParameters) {
 
 /// -------------------------------------------------------------------------------------------------------------- ///
 
-/*
-// tof handler
-static void tof_i2c_handler(void *pvParameters) {
-    // i2c config using default ESP32 I2C pins (SDA=21, SCL=22)
-    i2c_port_t i2c_port = I2C_NUM_0;
-    i2c_master_bus_config_t i2c_mst_config = {
-        .clk_source = I2C_CLK_SRC_DEFAULT,
-        .i2c_port = i2c_port,
-        .scl_io_num = 22,
-        .sda_io_num = 21,
-        .glitch_ignore_cnt = 7,
-        .flags.enable_internal_pullup = true,
-    };
+static void setup_optional_pins() {
+	if (VL53L5CX_PIN_INT != GPIO_NUM_NC) {
+		gpio_config_t int_cfg = {
+			.pin_bit_mask = 1ULL << VL53L5CX_PIN_INT,
+			.mode = GPIO_MODE_INPUT,
+			.pull_up_en = GPIO_PULLUP_DISABLE,
+			.pull_down_en = GPIO_PULLDOWN_DISABLE,
+			.intr_type = GPIO_INTR_DISABLE,
+		};
+		ESP_ERROR_CHECK(gpio_config(&int_cfg));
+	}
 
-    i2c_master_bus_handle_t bus_handle;
-    ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_mst_config, &bus_handle));
+	gpio_num_t outputs[] = {VL53L5CX_PIN_PWREN, VL53L5CX_PIN_I2C_RST,
+							VL53L5CX_PIN_LPN};
+	for (size_t i = 0; i < sizeof(outputs) / sizeof(outputs[0]); ++i) {
+		if (outputs[i] == GPIO_NUM_NC) {
+			continue;
+		}
 
-    // i2c device config
-    i2c_device_config_t dev_cfg = {
-        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-        .device_address = VL53L5CX_DEFAULT_I2C_ADDRESS >> 1,
-        .scl_speed_hz = VL53L5CX_MAX_CLK_SPEED,
-    };
+		gpio_config_t out_cfg = {
+			.pin_bit_mask = 1ULL << outputs[i],
+			.mode = GPIO_MODE_OUTPUT,
+			.pull_up_en = GPIO_PULLUP_DISABLE,
+			.pull_down_en = GPIO_PULLDOWN_DISABLE,
+			.intr_type = GPIO_INTR_DISABLE,
+		};
+		ESP_ERROR_CHECK(gpio_config(&out_cfg));
+	}
 
-    // TOF variables
-    uint8_t status, isAlive, isReady;
-    uint32_t loop;
-    static VL53L5CX_Configuration Dev;   // Sensor configuration (static to avoid stack overflow)
-    static VL53L5CX_ResultsData Results; // Results data from VL53L5CX (static to avoid stack overflow)
+	// Power-on/reset sequence for optional control pins.
+	if (VL53L5CX_PIN_PWREN != GPIO_NUM_NC) {
+		ESP_ERROR_CHECK(gpio_set_level(VL53L5CX_PIN_PWREN, 1));
+	}
 
-    Dev.platform.bus_config = i2c_mst_config;
+	if (VL53L5CX_PIN_I2C_RST != GPIO_NUM_NC) {
+		ESP_ERROR_CHECK(gpio_set_level(VL53L5CX_PIN_I2C_RST, 0));
+		vTaskDelay(pdMS_TO_TICKS(2));
+		ESP_ERROR_CHECK(gpio_set_level(VL53L5CX_PIN_I2C_RST, 1));
+	}
 
-    // Register the device on the bus
-    i2c_master_bus_add_device(bus_handle, &dev_cfg, &Dev.platform.handle);
+	if (VL53L5CX_PIN_LPN != GPIO_NUM_NC) {
+		ESP_ERROR_CHECK(gpio_set_level(VL53L5CX_PIN_LPN, 0));
+		vTaskDelay(pdMS_TO_TICKS(5));
+		ESP_ERROR_CHECK(gpio_set_level(VL53L5CX_PIN_LPN, 1));
+		printf("LPn/XSHUT driven high on GPIO %d\n", VL53L5CX_PIN_LPN);
+	}
 
-    // (optional) reset sensor - set reset pin if wired to a GPIO
-    // wire XSHUT to the GPIO below This clears MCU error states
-    Dev.platform.reset_gpio = GPIO_NUM_5;
-    VL53L5CX_Reset_Sensor(&(Dev.platform));
-    VL53L5CX_WaitMs(&(Dev.platform), 10);
-
-    // check sensor connection
-    status = vl53l5cx_is_alive(&Dev, &isAlive);
-    if (!isAlive || status)
-    {
-        printf("vl53l5cx_is_alive failed\n");
-        return;
-    }
-
-    // init TOF sensor
-    status = vl53l5cx_init(&Dev);
-    if (status)
-    {
-        printf("vl53l5cx_init failed\n");
-        return;
-    }
-
-   // set resolution to 4x4 (16 zones) to reduce result size for stack overflow and easier calculation
-    status = vl53l5cx_set_resolution(&Dev, VL53L5CX_RESOLUTION_4X4);
-    if (status)
-    {
-        printf("vl53l5cx_set_resolution failed, status %u\n", status);
-        return;
-    }
-
-    printf("VL53L5CX ready!\n");
-
-    // set ranging mode autonomous (basically just configures stuff for us)
-    status = vl53l5cx_set_ranging_mode(&Dev, VL53L5CX_RANGING_MODE_AUTONOMOUS);
-    if (status)
-    {
-        printf("vl53l5cx_set_ranging_mode failed, status %u\n", status);
-        return;
-    }
-    
-    status = vl53l5cx_set_integration_time_ms(&Dev, 20); // set integration time (ms) for autonomous mode
-    status |= vl53l5cx_set_ranging_frequency_hz(&Dev, 10); // set ranging frequency (Hz) for autonomous mode
-    status = vl53l5cx_start_ranging(&Dev); // start ranging
-
-    loop = 0;
-    while (true)
-    {
-        status = vl53l5cx_check_data_ready(&Dev, &isReady);
-        if (isReady)
-        {
-            vl53l5cx_get_ranging_data(&Dev, &Results);
-
-            // 4x4 grid with screen clear
-            // printf("\033[2J\033[H");
-            // printf("VL53L5CX 4x4 (stream %3u)\n\n", Dev.streamcount);
-
-            for (uint8_t row = 0; row < 4; row++)
-            {
-                for (uint8_t col = 0; col < 4; col++)
-                {
-                    uint8_t idx = row * 4 + col;
-                    uint16_t dist = Results.distance_mm[VL53L5CX_NB_TARGET_PER_ZONE * idx];
-                    // uint8_t st = Results.target_status[VL53L5CX_NB_TARGET_PER_ZONE * idx];
-
-                    if (dist == 0)
-                    {
-                        // no target / invalid
-                        printf("0,");
-                    }
-                    else
-                    {
-                        printf("%d,", dist);
-                    }
-                }
-                printf(";");
-            }
-            printf("\n");
-            fflush(stdout);
-            loop++;
-        }
-
-        // small delay to avoid I2C overload
-        VL53L5CX_WaitMs(&(Dev.platform), 5);
-    }
-
-    status = vl53l5cx_stop_ranging(&Dev);
-    printf("vl53l5cx_stop_ranging called\n");
-    VL53L5CX_WaitMs(&(Dev.platform), 1);
-
-    
-//    SensorMessage tof_data;
-//    xQueueOverwrite(TOFQueue, &tof_data);
+	vTaskDelay(pdMS_TO_TICKS(20));
 }
-*/
-/*
-// C++ Compatible TOF handler
-static void tof_i2c_handler(void *pvParameters)
-{
-    esp_err_t err;
+
+extern "C" void tof_imu_task(void *pvParameters) {
+	setup_optional_pins();
+
+	i2c_master_bus_config_t i2c_bus_cfg = {};
+	i2c_bus_cfg.i2c_port = VL53L5CX_I2C_PORT;
+	i2c_bus_cfg.sda_io_num = VL53L5CX_PIN_SDA;
+	i2c_bus_cfg.scl_io_num = VL53L5CX_PIN_SCL;
+	i2c_bus_cfg.clk_source = I2C_CLK_SRC_DEFAULT;
+	i2c_bus_cfg.glitch_ignore_cnt = 7;
+	i2c_bus_cfg.intr_priority = 0;
+	i2c_bus_cfg.trans_queue_depth = 0;
+	i2c_bus_cfg.flags.enable_internal_pullup = true;
+
+	i2c_master_bus_handle_t bus_handle = nullptr;
+	ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_bus_cfg, &bus_handle));
+
+	i2c_device_config_t dev_cfg = {};
+	dev_cfg.dev_addr_length = I2C_ADDR_BIT_LEN_7;
+	dev_cfg.device_address = (VL53L5CX_DEFAULT_I2C_ADDRESS >> 1);
+	dev_cfg.scl_speed_hz = VL53L5CX_I2C_SPEED_HZ;
+
+	esp_err_t probe_err =
+		i2c_master_probe(bus_handle, dev_cfg.device_address,
+						 pdMS_TO_TICKS(VL53L5CX_PROBE_TIMEOUT_MS));
+	if (probe_err != ESP_OK) {
+		printf("VL53L5CX probe failed at 0x%02X (%s)\n", dev_cfg.device_address,
+			   esp_err_to_name(probe_err));
+		return;
+	}
+
+	printf("VL53L5CX detected at 0x%02X\n", dev_cfg.device_address);
+
+	static VL53L5CX_Configuration dev = {};
+	static VL53L5CX_ResultsData results = {};
+	dev.platform.bus_config = i2c_bus_cfg;
+
+	ESP_ERROR_CHECK(
+		i2c_master_bus_add_device(bus_handle, &dev_cfg, &dev.platform.handle));
+
+	// If LPN is not externally controlled, keep reset_gpio as GPIO_NUM_NC.
+	dev.platform.reset_gpio = VL53L5CX_PIN_LPN;
+
 	uint8_t status = 0;
-	*/
-	/*
-    // -----------------------------
-    // I2C bus setup
-    // -----------------------------
-    i2c_master_bus_config_t i2c_mst_config = {};
-    i2c_mst_config.clk_source = I2C_CLK_SRC_DEFAULT;
-    i2c_mst_config.i2c_port = I2C_NUM_0;
-i2c_mst_config.scl_io_num = (gpio_num_t)I2C_MASTER_SCL_IO;  // 16
-i2c_mst_config.sda_io_num = (gpio_num_t)I2C_MASTER_SDA_IO;  // 15
-    i2c_mst_config.glitch_ignore_cnt = 7;
-    i2c_mst_config.flags.enable_internal_pullup = true;
+	uint8_t is_alive = 0;
 
-    i2c_master_bus_handle_t bus_handle = nullptr;
-    err = i2c_new_master_bus(&i2c_mst_config, &bus_handle);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "TOF: i2c_new_master_bus failed: %s", esp_err_to_name(err));
-        vTaskDelete(NULL);
-        return;
-    }
+	status = vl53l5cx_is_alive(&dev, &is_alive);
+	if ((status != VL53L5CX_STATUS_OK) || (is_alive == 0)) {
+		printf("VL53L5CX not detected (status=%u, alive=%u)\n", status,
+			   is_alive);
+		return;
+	}
 
-    // -----------------------------
-    // I2C device setup
-    // -----------------------------
-    i2c_device_config_t dev_cfg = {};
-    dev_cfg.dev_addr_length = I2C_ADDR_BIT_LEN_7;
-    dev_cfg.device_address = (VL53L5CX_DEFAULT_I2C_ADDRESS >> 1); // 0x52 >> 1 = 0x29
-    dev_cfg.scl_speed_hz = VL53L5CX_MAX_CLK_SPEED;
-    dev_cfg.scl_wait_us = 0;
-	*/
-	
-	/*
-    // -----------------------------
-    // TOF driver objects
-    // -----------------------------
-    static VL53L5CX_Configuration Dev = {};
-    static VL53L5CX_ResultsData Results = {};
+	status = vl53l5cx_init(&dev);
+	if (status != VL53L5CX_STATUS_OK) {
+		printf("vl53l5cx_init failed (status=%u)\n", status);
+		return;
+	}
 
-    // Match RJRP44 platform.h
-    //Dev.platform.bus_config = i2c_mst_config;
-    Dev.platform.address = VL53L5CX_DEFAULT_I2C_ADDRESS;
-    //Dev.platform.reset_gpio = GPIO_NUM_5;
+	status = vl53l5cx_set_resolution(&dev, VL53L5CX_RESOLUTION_4X4);
+	status |= vl53l5cx_set_ranging_mode(&dev, VL53L5CX_RANGING_MODE_AUTONOMOUS);
+	status |= vl53l5cx_set_integration_time_ms(&dev, 20);
+	status |= vl53l5cx_set_ranging_frequency_hz(&dev, 10);
+	if (status != VL53L5CX_STATUS_OK) {
+		printf("VL53L5CX config failed (status=%u)\n", status);
+		return;
+	}
 
-    //err = i2c_master_bus_add_device(bus_handle, &dev_cfg, &Dev.platform.handle);
-    //static i2c_master_dev_handle_t tof_dev_handle = nullptr;
-	//err = i2c_master_bus_add_device(bus_handle, &dev_cfg, &tof_dev_handle);
-	
-	
-    //if (err != ESP_OK) {
-        //ESP_LOGE(TAG, "TOF: i2c_master_bus_add_device failed: %s", esp_err_to_name(err));
-        //vTaskDelete(NULL);
-        //return;
-    //}
+	status = vl53l5cx_start_ranging(&dev);
+	if (status != VL53L5CX_STATUS_OK) {
+		printf("vl53l5cx_start_ranging failed (status=%u)\n", status);
+		return;
+	}
 
-    // Optional hardware reset
-    
-    //uint8_t status = VL53L5CX_Reset_Sensor(&Dev.platform);
-    //if (status != VL53L5CX_STATUS_OK) {
-    //    ESP_LOGW(TAG, "TOF: reset returned status %u", status);
-    //}
+	printf("VL53L5CX started. Streaming 4x4 distances in mm.\n");
+	printf("Format: r0c0,...,r0c3;r1c0,...,r1c3;r2...;r3...\n");
 
-    //status = VL53L5CX_WaitMs(&Dev.platform, 10);
-    //if (status != VL53L5CX_STATUS_OK) {
-    //    ESP_LOGW(TAG, "TOF: wait returned status %u", status);
-    //}
-    
+	while (true) {
+		uint8_t data_ready = 0;
+		status = vl53l5cx_check_data_ready(&dev, &data_ready);
+		if ((status == VL53L5CX_STATUS_OK) && data_ready) {
+			status = vl53l5cx_get_ranging_data(&dev, &results);
+			if (status == VL53L5CX_STATUS_OK) {
+				for (uint8_t row = 0; row < 4; ++row) {
+					for (uint8_t col = 0; col < 4; ++col) {
+						uint8_t idx = (row * 4U) + col;
+						uint16_t mm =
+							results
+								.distance_mm[VL53L5CX_NB_TARGET_PER_ZONE * idx];
+						printf("%u,", mm);
+					}
+					printf(";");
+				}
+				printf("\n");
+				fflush(stdout);
+			}
+		}
 
-    // -----------------------------
-    // Sensor bring-up
-    // -----------------------------
-    uint8_t isAlive = 0;
-    uint8_t isReady = 0;
-
-    status = vl53l5cx_is_alive(&Dev, &isAlive);
-    if ((status != VL53L5CX_STATUS_OK) || !isAlive) {
-        ESP_LOGE(TAG, "TOF: vl53l5cx_is_alive failed, status=%u alive=%u", status, isAlive);
-        vTaskDelete(NULL);
-        return;
-    }
-
-    status = vl53l5cx_init(&Dev);
-    if (status != VL53L5CX_STATUS_OK) {
-        ESP_LOGE(TAG, "TOF: vl53l5cx_init failed, status=%u", status);
-        vTaskDelete(NULL);
-        return;
-    }
-
-    status = vl53l5cx_set_resolution(&Dev, VL53L5CX_RESOLUTION_4X4);
-    if (status != VL53L5CX_STATUS_OK) {
-        ESP_LOGE(TAG, "TOF: set_resolution failed, status=%u", status);
-        vTaskDelete(NULL);
-        return;
-    }
-
-    status = vl53l5cx_set_ranging_mode(&Dev, VL53L5CX_RANGING_MODE_AUTONOMOUS);
-    if (status != VL53L5CX_STATUS_OK) {
-        ESP_LOGE(TAG, "TOF: set_ranging_mode failed, status=%u", status);
-        vTaskDelete(NULL);
-        return;
-    }
-
-    status = vl53l5cx_set_integration_time_ms(&Dev, 20);
-    if (status != VL53L5CX_STATUS_OK) {
-        ESP_LOGE(TAG, "TOF: set_integration_time_ms failed, status=%u", status);
-        vTaskDelete(NULL);
-        return;
-    }
-
-    status = vl53l5cx_set_ranging_frequency_hz(&Dev, 10);
-    if (status != VL53L5CX_STATUS_OK) {
-        ESP_LOGE(TAG, "TOF: set_ranging_frequency_hz failed, status=%u", status);
-        vTaskDelete(NULL);
-        return;
-    }
-
-    status = vl53l5cx_start_ranging(&Dev);
-    if (status != VL53L5CX_STATUS_OK) {
-        ESP_LOGE(TAG, "TOF: start_ranging failed, status=%u", status);
-        vTaskDelete(NULL);
-        return;
-    }
-
-    ESP_LOGI(TAG, "TOF: VL53L5CX ready");
-
-    // -----------------------------
-    // Main ranging loop
-    // -----------------------------
-    while (true) {
-        status = vl53l5cx_check_data_ready(&Dev, &isReady);
-        if (status != VL53L5CX_STATUS_OK) {
-            ESP_LOGW(TAG, "TOF: check_data_ready failed, status=%u", status);
-            vTaskDelay(pdMS_TO_TICKS(10));
-            continue;
-        }
-
-        if (isReady) {
-            status = vl53l5cx_get_ranging_data(&Dev, &Results);
-            if (status != VL53L5CX_STATUS_OK) {
-                ESP_LOGW(TAG, "TOF: get_ranging_data failed, status=%u", status);
-            } else {
-                for (uint8_t row = 0; row < 4; row++) {
-                    for (uint8_t col = 0; col < 4; col++) {
-                        uint8_t idx = row * 4 + col;
-                        uint16_t dist = Results.distance_mm[VL53L5CX_NB_TARGET_PER_ZONE * idx];
-                        printf("%u,", dist);
-                    }
-                    printf(";");
-                }
-                printf("\n");
-                //fflush(stdout);
-            }
-        }
-
-        //VL53L5CX_WaitMs(&Dev.platform, 5);
-        vTaskDelay(pdMS_TO_TICKS(5));
-    }
+		vTaskDelay(pdMS_TO_TICKS(5));
+	}
 }
-
-*/
-
 
 
 
@@ -1074,7 +1055,6 @@ extern "C" void app_main(void)
 	PWMQueue = xQueueCreate(1, sizeof(PWMMessage));
 	DRIVERQueue = xQueueCreate(1, sizeof(SensorBatch));
 	
-	ESP_LOGI("Main", "Main Task Reached");
 	
 	
 	
@@ -1082,11 +1062,11 @@ extern "C" void app_main(void)
     //// Create imu task
     //xTaskCreate(imu_task, "imu_task", 4096, nullptr, 10, nullptr);
  	
- 	
+ 	//// I2C init for GPS & TOF
+ 	//i2c_init();
  	
     //// Create tof task
-    // tof_i2c_init();
-    //xTaskCreate(tof_i2c_handler, "tof_task", 4096, NULL, 10, NULL);
+    xTaskCreate(tof_imu_task, "tof_task", 4096, NULL, 10, NULL);
     
     
     
@@ -1101,8 +1081,7 @@ extern "C" void app_main(void)
     //xTaskCreate(uart_task, "uart_task", 4096, NULL, 5, NULL);
     
     //// Create GPS I2C Task
-    i2c_init();
-    xTaskCreate(i2c_gps_task,"i2c_gps_task",4096,nullptr,10,nullptr);
+    //xTaskCreate(i2c_gps_task,"i2c_gps_task",4096,nullptr,10,nullptr);
     
     
     
