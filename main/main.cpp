@@ -93,7 +93,7 @@ typedef struct {
 typedef struct {
     uint8_t euler_length;
     uint8_t g_length;
-    uint8_t payload[6];
+    float payload[6];
 } IMUMessage;
 
 typedef struct {
@@ -426,7 +426,10 @@ static void uart_task_2(void *pvParameters)
 		
 		// Retrieve TOF data from queue
         
+        //// Disabled for debugging:
+        //ESP_LOGI(TAG, "IMU to RPI: %.2f %.2f %.2f %.2f %.2f %.2f", IMU_data_out.payload[0], IMU_data_out.payload[1], IMU_data_out.payload[2], IMU_data_out.payload[3], IMU_data_out.payload[4], IMU_data_out.payload[5]);
         
+        /*
         int msg_len = snprintf((char *)msg, sizeof(msg),
                            "TOF: %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, "
                            "%.3f, %.3f, %.1f, %.1f, %.1f, %.1f, %.1f, %.1f; "
@@ -517,7 +520,7 @@ static void uart_task_2(void *pvParameters)
 			PWM_data_in.length = 5;
         }
         
-        
+        */
         // Testing hard coding:
         /*
         PWM_data_in.payload[0] = (uint8_t) 100;
@@ -528,8 +531,10 @@ static void uart_task_2(void *pvParameters)
 		PWM_data_in.length = 5;
 		*/
 		
+		//// Disabled for debugging
+		/*
 		xQueueOverwrite(PWMQueue, &PWM_data_in);
-
+		*/
         vTaskDelay(pdMS_TO_TICKS(500));
     }
     
@@ -563,6 +568,7 @@ static void imu_task(void *pvParameters) {
 	}
 
 	
+	
 	// Enable useful reports
 	imu.rpt.rv.enable(100000UL); // game rotation vector
 	imu.rpt.cal_gyro.enable(100000UL); // calibrated gyro
@@ -575,9 +581,9 @@ static void imu_task(void *pvParameters) {
 				bno08x_euler_angle_t euler = imu.rpt.rv.get_euler();
 				ESP_LOGI(TAG, "Euler: roll = %.2f, pitch = %.2f, yaw = %.2f", euler.x, euler.y, euler.z);
 				
-		        IMU_data_in.payload[0] = (uint8_t) euler.x;
-				IMU_data_in.payload[1] = (uint8_t) euler.y;
-				IMU_data_in.payload[2] = (uint8_t) euler.z;
+		        IMU_data_in.payload[0] = (float) euler.x;
+				IMU_data_in.payload[1] = (float) euler.y;
+				IMU_data_in.payload[2] = (float) euler.z;
 				IMU_data_in.euler_length = 3;
 				
 				
@@ -587,9 +593,9 @@ static void imu_task(void *pvParameters) {
 			if (imu.rpt.cal_gyro.has_new_data()) {
 				bno08x_gyro_t g = imu.rpt.cal_gyro.get();
 				ESP_LOGI(TAG, "Gyro: x = %.2f, y = %.2f, z = %.2f rad/s", g.x, g.y, g.z);
-				IMU_data_in.payload[3] = (uint8_t) g.x;
-				IMU_data_in.payload[4] = (uint8_t) g.y;
-				IMU_data_in.payload[5] = (uint8_t) g.z;
+				IMU_data_in.payload[3] = (float) g.x;
+				IMU_data_in.payload[4] = (float) g.y;
+				IMU_data_in.payload[5] = (float) g.z;
 				IMU_data_in.g_length = 3;
 			}
 		}
@@ -598,7 +604,7 @@ static void imu_task(void *pvParameters) {
 		}
 		
 		
-		xQueueOverwrite(IMUMessage, &IMU_data_in);
+		xQueueOverwrite(IMUQueue, &IMU_data_in);
 		vTaskDelay(pdMS_TO_TICKS(10));
 		
     }
@@ -1074,7 +1080,7 @@ extern "C" void app_main(void)
 	
 
     //// Create imu task
-    xTaskCreate(imu_task, "imu_task", 4096, nullptr, 10, nullptr);
+    //xTaskCreate(imu_task, "imu_task", 4096, nullptr, 10, nullptr);
  	
  	
  	
@@ -1095,8 +1101,8 @@ extern "C" void app_main(void)
     //xTaskCreate(uart_task, "uart_task", 4096, NULL, 5, NULL);
     
     //// Create GPS I2C Task
-    //i2c_init();
-    //xTaskCreate(i2c_gps_task,"i2c_gps_task",4096,nullptr,10,nullptr);
+    i2c_init();
+    xTaskCreate(i2c_gps_task,"i2c_gps_task",4096,nullptr,10,nullptr);
     
     
     
