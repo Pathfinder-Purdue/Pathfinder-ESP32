@@ -98,6 +98,11 @@ typedef struct {
 } IMUMessage;
 
 typedef struct {
+    uint8_t length;
+    uint16_t payload[16];
+} TOFMessage;
+
+typedef struct {
     SensorMessage messages[3];
 } SensorBatch;
 
@@ -509,7 +514,7 @@ static void uart_init_2(void)
 // ESP-RPI Task
 static void uart_task_2(void *pvParameters)
 {
-	float ToF_data [16] = {0.001, 0.11, 0.0, 0.22, 1.54, 2.15, 55.6, 889, 637.34, 88.2, 1, 1, 1, 1, 1, 1};
+	uint16_t TOF_data [16] = {0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1};
 	float IMU_data [6] = {0, 23, 0, 0, 0, 0};
 	float GPS_data [2] = {42.3588337, -71.0578303};
     uint8_t data2[256];
@@ -518,7 +523,7 @@ static void uart_task_2(void *pvParameters)
     
     SensorMessage GPS_data_out;
     IMUMessage IMU_data_out;
-    SensorMessage TOF_data_out;
+    TOFMessage TOF_data_out;
     PWMMessage PWM_data_in;
     
 
@@ -531,6 +536,7 @@ static void uart_task_2(void *pvParameters)
         
         // Retrieve IMU data from queue
         xQueuePeek(IMUQueue, &IMU_data_out, 0);
+        
         if (IMU_data_out.g_length == 3 && IMU_data_out.euler_length == 3) {
 			IMU_data[0] = IMU_data_out.payload[0];
 			IMU_data[1] = IMU_data_out.payload[1];
@@ -540,17 +546,21 @@ static void uart_task_2(void *pvParameters)
 			IMU_data[5] = IMU_data_out.payload[5];
 		}
 		else {
-			IMU_data[0] = 0;
-			IMU_data[1] = 0;
-			IMU_data[2] = 0;
-			IMU_data[3] = 0;
-			IMU_data[4] = 0;
-			IMU_data[5] = 0;
+			ESP_LOGE(TAG, "IMU Queue Data Size Incorrect");
 		}
 		
 		// Retrieve GPS data from queue
 		
 		// Retrieve TOF data from queue
+		xQueuePeek(TOFQueue, &TOF_data_out, 0);
+		
+		if (TOF_data_out.length == 16) {
+			memcpy(TOF_data, TOF_data_out.payload, sizeof(TOF_data));
+			//ESP_LOGI(TAG, "TOF to RPI: %u %u %u %u; %u %u %u %u; %u %u %u %u; %u %u %u %u", TOF_data_out.payload[0], TOF_data_out.payload[1], TOF_data_out.payload[2], TOF_data_out.payload[3], TOF_data_out.payload[4], TOF_data_out.payload[5], TOF_data_out.payload[6], TOF_data_out.payload[7], TOF_data_out.payload[8], TOF_data_out.payload[9], TOF_data_out.payload[10], TOF_data_out.payload[11], TOF_data_out.payload[12], TOF_data_out.payload[13], TOF_data_out.payload[14], TOF_data_out.payload[15]);
+		}
+		else {
+			ESP_LOGE(TAG, "TOF Queue Data Size Incorrect");
+		}
         
         //// Disabled for debugging:
         //ESP_LOGI(TAG, "IMU to RPI: %.2f %.2f %.2f %.2f %.2f %.2f", IMU_data_out.payload[0], IMU_data_out.payload[1], IMU_data_out.payload[2], IMU_data_out.payload[3], IMU_data_out.payload[4], IMU_data_out.payload[5]);
@@ -796,6 +806,9 @@ static void setup_optional_pins() {
 }
 
 extern "C" void tof_imu_task(void *pvParameters) {
+	TOFMessage TOF_data_in;
+	
+	
 	setup_optional_pins();
 
 	i2c_master_bus_config_t i2c_bus_cfg = {};
@@ -884,14 +897,23 @@ extern "C" void tof_imu_task(void *pvParameters) {
 							results
 								.distance_mm[VL53L5CX_NB_TARGET_PER_ZONE * idx];
 						printf("%u,", mm);
+						
+						TOF_data_in.payload[idx] = mm;
 					}
 					printf(";");
 				}
 				printf("\n");
 				fflush(stdout);
+				
+				TOF_data_in.length = 16;
+			}
+			else {
+				TOF_data_in.length = 0;
+				memset(TOF_data_in.payload, 0, sizeof(TOF_data_in.payload));
 			}
 		}
-
+		
+		xQueueOverwrite(TOFQueue, &TOF_data_in);
 		vTaskDelay(pdMS_TO_TICKS(5));
 	}
 }
@@ -1051,7 +1073,7 @@ extern "C" void app_main(void)
 	// Init queues
 	GPSQueue = xQueueCreate(1, sizeof(SensorMessage));
 	IMUQueue = xQueueCreate(1, sizeof(IMUMessage));
-	TOFQueue = xQueueCreate(1, sizeof(SensorMessage));
+	TOFQueue = xQueueCreate(1, sizeof(TOFMessage));
 	PWMQueue = xQueueCreate(1, sizeof(PWMMessage));
 	DRIVERQueue = xQueueCreate(1, sizeof(SensorBatch));
 	
@@ -1066,7 +1088,7 @@ extern "C" void app_main(void)
  	//i2c_init();
  	
     //// Create tof task
-    xTaskCreate(tof_imu_task, "tof_task", 4096, NULL, 10, NULL);
+    //xTaskCreate(tof_imu_task, "tof_task", 4096, NULL, 10, NULL);
     
     
     
@@ -1077,8 +1099,8 @@ extern "C" void app_main(void)
     
 	
 	//// Create GPS UART Task
-	//uart_init();
-    //xTaskCreate(uart_task, "uart_task", 4096, NULL, 5, NULL);
+	uart_init();
+    xTaskCreate(uart_task, "uart_task", 4096, NULL, 5, NULL);
     
     //// Create GPS I2C Task
     //xTaskCreate(i2c_gps_task,"i2c_gps_task",4096,nullptr,10,nullptr);
