@@ -35,7 +35,7 @@
 #define UART_BUF_SIZE      1024
 
 #define UART2_PORT_NUM      UART_NUM_2
-#define UART2_BAUD_RATE     9600
+#define UART2_BAUD_RATE     115200
 #define UART2_TX_PIN        21   // U2TXD on ESP32-S3-DevKitC-1
 #define UART2_RX_PIN        47   // U2RXD on ESP32-S3-DevKitC-1
 #define UART2_BUF_SIZE      1024
@@ -621,7 +621,7 @@ static void uart_task_2(void *pvParameters)
 		
 		if (TOF_data_out.length == 16) {
 			memcpy(TOF_data, TOF_data_out.payload, sizeof(TOF_data));
-			//ESP_LOGI(TAG, "TOF to RPI: %u %u %u %u; %u %u %u %u; %u %u %u %u; %u %u %u %u", TOF_data_out.payload[0], TOF_data_out.payload[1], TOF_data_out.payload[2], TOF_data_out.payload[3], TOF_data_out.payload[4], TOF_data_out.payload[5], TOF_data_out.payload[6], TOF_data_out.payload[7], TOF_data_out.payload[8], TOF_data_out.payload[9], TOF_data_out.payload[10], TOF_data_out.payload[11], TOF_data_out.payload[12], TOF_data_out.payload[13], TOF_data_out.payload[14], TOF_data_out.payload[15]);
+			ESP_LOGI(TAG, "TOF to RPI: %u %u %u %u; %u %u %u %u; %u %u %u %u; %u %u %u %u", TOF_data_out.payload[0], TOF_data_out.payload[1], TOF_data_out.payload[2], TOF_data_out.payload[3], TOF_data_out.payload[4], TOF_data_out.payload[5], TOF_data_out.payload[6], TOF_data_out.payload[7], TOF_data_out.payload[8], TOF_data_out.payload[9], TOF_data_out.payload[10], TOF_data_out.payload[11], TOF_data_out.payload[12], TOF_data_out.payload[13], TOF_data_out.payload[14], TOF_data_out.payload[15]);
 		}
 		else {
 			ESP_LOGE(TAG, "TOF Queue Data Size Incorrect");
@@ -1151,7 +1151,7 @@ extern "C" void app_main(void)
 	
 
     //// Create imu task
-    xTaskCreate(imu_task, "imu_task", 4096, nullptr, 10, nullptr);
+    //xTaskCreate(imu_task, "imu_task", 4096, nullptr, 10, nullptr);
  	
  	//// I2C init for GPS & TOF
  	//i2c_init();
@@ -1162,8 +1162,8 @@ extern "C" void app_main(void)
     
     
     //// Create motor driver tasks
-    pwm_init();
-    xTaskCreate(pwm_handler, "motor_driver_task", 4096, nullptr, 10, nullptr);
+    //pwm_init();
+    //xTaskCreate(pwm_handler, "motor_driver_task", 4096, nullptr, 10, nullptr);
     
     
 	
