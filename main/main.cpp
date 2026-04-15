@@ -578,8 +578,8 @@ static void uart_task_2(void *pvParameters)
 {
 	uint16_t TOF_data [16] = {0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1};
 	float IMU_data [6] = {0, 23, 0, 0, 0, 0};
-	float GPS_data [2] = {42.3588337, -71.0578303};
-    uint8_t data2[256];
+	float GPS_data [3] = {003918.00, 42.3588337, -71.0578303};
+    uint8_t received_data[256];
     uint8_t msg[256];
     
     
@@ -596,6 +596,8 @@ static void uart_task_2(void *pvParameters)
 		
         size_t buffered_len2 = 0;
         
+        // Disabled for debugging
+        /*
         // Retrieve IMU data from queue
         xQueuePeek(IMUQueue, &IMU_data_out, 0);
         
@@ -623,25 +625,25 @@ static void uart_task_2(void *pvParameters)
 		else {
 			ESP_LOGE(TAG, "TOF Queue Data Size Incorrect");
 		}
-        
+        */
         //// Disabled for debugging:
-        ESP_LOGI(TAG, "IMU to RPI: %.2f %.2f %.2f %.2f %.2f %.2f", IMU_data_out.payload[0], IMU_data_out.payload[1], IMU_data_out.payload[2], IMU_data_out.payload[3], IMU_data_out.payload[4], IMU_data_out.payload[5]);
+        //ESP_LOGI(TAG, "IMU to RPI: %.2f %.2f %.2f %.2f %.2f %.2f", IMU_data_out.payload[0], IMU_data_out.payload[1], IMU_data_out.payload[2], IMU_data_out.payload[3], IMU_data_out.payload[4], IMU_data_out.payload[5]);
         
-        /*
+        
         int msg_len = snprintf((char *)msg, sizeof(msg),
-                           "TOF: %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, "
-                           "%.3f, %.3f, %.1f, %.1f, %.1f, %.1f, %.1f, %.1f; "
+                           "TOF: %u, %u, %u, %u, %u, %u, %u, %u, "
+                           "%u, %u, %u, %u, %u, %u, %u, %u; "
                            "IMU: %.2f, %.2f, %.2f, %.2f, %.2f, %.2f; "
-                           "GPS: %.7f, %.7f\n",
+                           "GPS: %.7f, %.7f, %.7f\n",
 
-                           ToF_data[0], ToF_data[1], ToF_data[2], ToF_data[3],
-                           ToF_data[4], ToF_data[5], ToF_data[6], ToF_data[7],
-                           ToF_data[8], ToF_data[9], ToF_data[10], ToF_data[11],
-                           ToF_data[12], ToF_data[13], ToF_data[14], ToF_data[15],
+                           TOF_data[0], TOF_data[1], TOF_data[2], TOF_data[3],
+                           TOF_data[4], TOF_data[5], TOF_data[6], TOF_data[7],
+                           TOF_data[8], TOF_data[9], TOF_data[10], TOF_data[11],
+                           TOF_data[12], TOF_data[13], TOF_data[14], TOF_data[15],
 
                            IMU_data[0], IMU_data[1], IMU_data[2], IMU_data[3], IMU_data[4], IMU_data[5],
 
-                           GPS_data[0], GPS_data[1]);
+                           GPS_data[0], GPS_data[1], GPS_data[2]);
 
         int written = uart_write_bytes(UART2_PORT_NUM, (const char *)msg, etl::strlen(msg));
         
@@ -649,13 +651,13 @@ static void uart_task_2(void *pvParameters)
         ESP_ERROR_CHECK(uart_get_buffered_data_len(UART2_PORT_NUM, &buffered_len2));
 
         // Clamp to buffer size so we don't overflow 'data'
-        if (buffered_len2 > sizeof(data2)) {
-            buffered_len2 = sizeof(data2);
+        if (buffered_len2 > sizeof(received_data)) {
+            buffered_len2 = sizeof(received_data);
         }
 
         int len = uart_read_bytes(
             UART2_PORT_NUM,
-            data2,
+            received_data,
             buffered_len2,
             100 / portTICK_PERIOD_MS
         );
@@ -668,16 +670,16 @@ static void uart_task_2(void *pvParameters)
             // len is an int, so %d is correct
             ESP_LOGI(TAG, "RX2 %d bytes", len);
             std::printf("UART2 RX: ");
-            std::fwrite(data2, 1, len, stdout);
+            std::fwrite(received_data, 1, len, stdout);
             std::printf("\n");
            
             // Parse recieved data
-            if (len >= sizeof(data2)) len = sizeof(data2) - 1;
-    		data2[len] = '\0';
+            if (len >= sizeof(received_data)) len = sizeof(received_data) - 1;
+    		received_data[len] = '\0';
     		
 		    int p1, p2, p3, p4, p5;
 		
-		    int parsed = sscanf((char *)data2, "%d,%d,%d,%d,%d",
+		    int parsed = sscanf((char *)received_data, "%d,%d,%d,%d,%d",
 		                        &p1, &p2, &p3, &p4, &p5);
 		
 		    if (parsed == 5) {
@@ -695,7 +697,7 @@ static void uart_task_2(void *pvParameters)
 		        ESP_LOGI(TAG, "Parsed: %d %d %d %d %d", p1, p2, p3, p4, p5);
 		    }
 		    else {
-        		ESP_LOGW(TAG, "Parse failed: %s", (char*)data2);
+        		ESP_LOGW(TAG, "Parse failed: %s", (char*)received_data);
         		
 	            PWM_data_in.payload[0] = 0;
 				PWM_data_in.payload[1] = 0;
@@ -718,15 +720,15 @@ static void uart_task_2(void *pvParameters)
 			PWM_data_in.length = 5;
         }
         
-        */
+        
         // Testing hard coding:
         
-        PWM_data_in.payload[0] = (uint8_t) 100;
-		PWM_data_in.payload[1] = (uint8_t) 90;
-		PWM_data_in.payload[2] = (uint8_t) 80;
-		PWM_data_in.payload[3] = (uint8_t) 70;
-		PWM_data_in.payload[4] = (uint8_t) 60;
-		PWM_data_in.length = 5;
+        //PWM_data_in.payload[0] = (uint8_t) 100;
+		//PWM_data_in.payload[1] = (uint8_t) 90;
+		//PWM_data_in.payload[2] = (uint8_t) 80;
+		//PWM_data_in.payload[3] = (uint8_t) 70;
+		//PWM_data_in.payload[4] = (uint8_t) 60;
+		//PWM_data_in.length = 5;
 		
 		
 		//// Disabled for debugging
@@ -1155,14 +1157,14 @@ extern "C" void app_main(void)
     
     
     //// Create motor driver tasks
-    //pwm_init();
-    //xTaskCreate(pwm_handler, "motor_driver_task", 4096, nullptr, 10, nullptr);
+    pwm_init();
+    xTaskCreate(pwm_handler, "motor_driver_task", 4096, nullptr, 10, nullptr);
     
     
 	
 	//// Create GPS UART Task
-	uart_init();
-    xTaskCreate(uart_task, "uart_task", 4096, NULL, 5, NULL);
+	//uart_init();
+    //xTaskCreate(uart_task, "uart_task", 4096, NULL, 5, NULL);
     
     //// Create GPS I2C Task
     //xTaskCreate(i2c_gps_task,"i2c_gps_task",4096,nullptr,10,nullptr);
@@ -1170,8 +1172,8 @@ extern "C" void app_main(void)
     
     
     //// Create ESP-RPI UART Task
-    //uart_init_2();
-    //xTaskCreate(uart_task_2, "uart2_task", 4096, nullptr, 5, nullptr);
+    uart_init_2();
+    xTaskCreate(uart_task_2, "uart2_task", 4096, nullptr, 5, nullptr);
 	
     
 
