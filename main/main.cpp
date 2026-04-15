@@ -104,6 +104,12 @@ typedef struct {
 } TOFMessage;
 
 typedef struct {
+    uint8_t length;
+    double payload[2];
+    char time[16];
+} GPSMessage;
+
+typedef struct {
     SensorMessage messages[3];
 } SensorBatch;
 
@@ -174,7 +180,12 @@ bool parse_rmc_minimal(const char *line, double &lat, double &lon, char *time_ou
     while (token != nullptr) {
         switch (field) {
             case 1: time = token; break;
-            case 2: if (token[0] != 'A') return false; break; // invalid fix
+            case 2: if (token[0] != 'A'){
+				lat = 0;
+				lon = 0;
+				strcpy(time_out, "0");
+				return true;
+			} break; // invalid fix
             case 3: lat_str = token; break;
             case 4: lat_hemi = token[0]; break;
             case 5: lon_str = token; break;
@@ -253,6 +264,8 @@ static void uart_task(void *pvParameters)
     uint8_t rx_chunk[256];
     char line_buffer[1024];
     size_t line_len = 0;
+    
+    GPSMessage GPS_data_in;
 
     while (1) {
         int len = uart_read_bytes(
@@ -278,12 +291,10 @@ static void uart_task(void *pvParameters)
 
                     //ESP_LOGI(TAG, "GPS line: %s", line_buffer);
 
-                    // TODO: parse complete NMEA sentence here
-                    double lat, lon;
-					char time[16];
-
-					if (parse_rmc_minimal(line_buffer, lat, lon, time)) {
-    					ESP_LOGI("GPS", "Time=%s Lat=%.6f Lon=%.6f", time, lat, lon);
+					if (parse_rmc_minimal(line_buffer, GPS_data_in.payload[1], GPS_data_in.payload[1], GPS_data_in.time)) {
+    					//ESP_LOGI("GPS", "Time=%s Lat=%.6f Lon=%.6f", GPS_data_in.payload[1], GPS_data_in.payload[1], GPS_data_in.time);
+    					
+    					xQueueOverwrite(GPSQueue, &GPS_data_in);
 					}
 
                     line_len = 0;
@@ -578,13 +589,14 @@ static void uart_task_2(void *pvParameters)
 {
 	uint16_t TOF_data [16] = {0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1};
 	float IMU_data [6] = {0, 23, 0, 0, 0, 0};
-	float GPS_data [3] = {003918.00, 42.3588337, -71.0578303};
+	double GPS_data [2] = {42.3588337, -71.0578303};
+	char GPS_time [16] = "30301.00";
     uint8_t received_data[256];
     uint8_t msg[256];
     int inc = 0;
     
     
-    SensorMessage GPS_data_out;
+    GPSMessage GPS_data_out;
     IMUMessage IMU_data_out;
     TOFMessage TOF_data_out;
     PWMMessage PWM_data_in;
@@ -597,8 +609,8 @@ static void uart_task_2(void *pvParameters)
 		
         size_t buffered_len2 = 0;
         
-        // Disabled for debugging
-        
+
+
         // Retrieve IMU data from queue
         xQueuePeek(IMUQueue, &IMU_data_out, 0);
         
@@ -615,6 +627,17 @@ static void uart_task_2(void *pvParameters)
 		}
 		
 		// Retrieve GPS data from queue
+		xQueuePeek(GPSQueue, &GPS_data_out, 0);
+		
+		if (GPS_data_out.length == 3) {
+			strcpy(GPS_time, GPS_data_out.time);
+			GPS_data[0] = GPS_data_out.payload[0];
+			GPS_data[1] = GPS_data_out.payload[1];
+		}
+		else{
+			ESP_LOGE(TAG, "GPS Queue Data Size Incorrect");
+		}
+		
 		
 		// Retrieve TOF data from queue
 		xQueuePeek(TOFQueue, &TOF_data_out, 0);
@@ -627,8 +650,8 @@ static void uart_task_2(void *pvParameters)
 			ESP_LOGE(TAG, "TOF Queue Data Size Incorrect");
 		}
         
-        //// Disabled for debugging:
         //ESP_LOGI(TAG, "IMU to RPI: %.2f %.2f %.2f %.2f %.2f %.2f", IMU_data_out.payload[0], IMU_data_out.payload[1], IMU_data_out.payload[2], IMU_data_out.payload[3], IMU_data_out.payload[4], IMU_data_out.payload[5]);
+        
         
         inc = (inc + 1) % 101;
         
@@ -637,7 +660,7 @@ static void uart_task_2(void *pvParameters)
                            "TOF: %u, %u, %u, %u, %u, %u, %u, %u, "
                            "%u, %u, %u, %u, %u, %u, %u, %u; "
                            "IMU: %.2f, %.2f, %.2f, %.2f, %.2f, %.2f; "
-                           "GPS: %.7f, %.7f, %.7f\n",
+                           "GPS: %s, %.7f, %.7f\n",
 
                            inc,
                            TOF_data[0], TOF_data[1], TOF_data[2], TOF_data[3],
@@ -647,7 +670,7 @@ static void uart_task_2(void *pvParameters)
 
                            IMU_data[0], IMU_data[1], IMU_data[2], IMU_data[3], IMU_data[4], IMU_data[5],
 
-                           GPS_data[0], GPS_data[1], GPS_data[2]);
+                           GPS_time, GPS_data[0], GPS_data[1]);
 
         int written = uart_write_bytes(UART2_PORT_NUM, (const char *)msg, etl::strlen(msg));
         
