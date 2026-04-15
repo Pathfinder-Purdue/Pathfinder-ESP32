@@ -581,6 +581,7 @@ static void uart_task_2(void *pvParameters)
 	float GPS_data [3] = {003918.00, 42.3588337, -71.0578303};
     uint8_t received_data[256];
     uint8_t msg[256];
+    int inc = 0;
     
     
     SensorMessage GPS_data_out;
@@ -597,7 +598,7 @@ static void uart_task_2(void *pvParameters)
         size_t buffered_len2 = 0;
         
         // Disabled for debugging
-        /*
+        
         // Retrieve IMU data from queue
         xQueuePeek(IMUQueue, &IMU_data_out, 0);
         
@@ -620,22 +621,25 @@ static void uart_task_2(void *pvParameters)
 		
 		if (TOF_data_out.length == 16) {
 			memcpy(TOF_data, TOF_data_out.payload, sizeof(TOF_data));
-			ESP_LOGI(TAG, "TOF to RPI: %u %u %u %u; %u %u %u %u; %u %u %u %u; %u %u %u %u", TOF_data_out.payload[0], TOF_data_out.payload[1], TOF_data_out.payload[2], TOF_data_out.payload[3], TOF_data_out.payload[4], TOF_data_out.payload[5], TOF_data_out.payload[6], TOF_data_out.payload[7], TOF_data_out.payload[8], TOF_data_out.payload[9], TOF_data_out.payload[10], TOF_data_out.payload[11], TOF_data_out.payload[12], TOF_data_out.payload[13], TOF_data_out.payload[14], TOF_data_out.payload[15]);
+			//ESP_LOGI(TAG, "TOF to RPI: %u %u %u %u; %u %u %u %u; %u %u %u %u; %u %u %u %u", TOF_data_out.payload[0], TOF_data_out.payload[1], TOF_data_out.payload[2], TOF_data_out.payload[3], TOF_data_out.payload[4], TOF_data_out.payload[5], TOF_data_out.payload[6], TOF_data_out.payload[7], TOF_data_out.payload[8], TOF_data_out.payload[9], TOF_data_out.payload[10], TOF_data_out.payload[11], TOF_data_out.payload[12], TOF_data_out.payload[13], TOF_data_out.payload[14], TOF_data_out.payload[15]);
 		}
 		else {
 			ESP_LOGE(TAG, "TOF Queue Data Size Incorrect");
 		}
-        */
+        
         //// Disabled for debugging:
         //ESP_LOGI(TAG, "IMU to RPI: %.2f %.2f %.2f %.2f %.2f %.2f", IMU_data_out.payload[0], IMU_data_out.payload[1], IMU_data_out.payload[2], IMU_data_out.payload[3], IMU_data_out.payload[4], IMU_data_out.payload[5]);
         
+        inc = (inc + 1) % 101;
         
         int msg_len = snprintf((char *)msg, sizeof(msg),
+                           "Inc: %d; "
                            "TOF: %u, %u, %u, %u, %u, %u, %u, %u, "
                            "%u, %u, %u, %u, %u, %u, %u, %u; "
                            "IMU: %.2f, %.2f, %.2f, %.2f, %.2f, %.2f; "
                            "GPS: %.7f, %.7f, %.7f\n",
 
+                           inc,
                            TOF_data[0], TOF_data[1], TOF_data[2], TOF_data[3],
                            TOF_data[4], TOF_data[5], TOF_data[6], TOF_data[7],
                            TOF_data[8], TOF_data[9], TOF_data[10], TOF_data[11],
@@ -694,6 +698,7 @@ static void uart_task_2(void *pvParameters)
 		
 		
 				// Display what was parsed
+				ESP_LOGI(TAG, "Raw Data: %s", (char*)received_data);
 		        ESP_LOGI(TAG, "Parsed: %d %d %d %d %d", p1, p2, p3, p4, p5);
 		    }
 		    else {
@@ -735,7 +740,7 @@ static void uart_task_2(void *pvParameters)
 		
 		xQueueOverwrite(PWMQueue, &PWM_data_in);
 		
-        vTaskDelay(pdMS_TO_TICKS(500));
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
     
 
@@ -1146,13 +1151,13 @@ extern "C" void app_main(void)
 	
 
     //// Create imu task
-    //xTaskCreate(imu_task, "imu_task", 4096, nullptr, 10, nullptr);
+    xTaskCreate(imu_task, "imu_task", 4096, nullptr, 10, nullptr);
  	
  	//// I2C init for GPS & TOF
  	//i2c_init();
  	
     //// Create tof task
-    //xTaskCreate(tof_imu_task, "tof_task", 4096, NULL, 10, NULL);
+    xTaskCreate(tof_imu_task, "tof_task", 4096, NULL, 10, NULL);
     
     
     
