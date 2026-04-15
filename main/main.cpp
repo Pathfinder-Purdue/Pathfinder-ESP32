@@ -23,6 +23,7 @@
 #include <cstdio>
 #include <cstdint>
 #include <cstring>
+#include <cstdlib>
 #include "vl53l5cx_api.h"
 #include "esp_check.h"
 
@@ -200,39 +201,98 @@ static void uart_init(void)
 // GPS UART task
 static void uart_task(void *pvParameters)
 {
-    uint8_t data[128];
+    uint8_t rx_chunk[256];
+    char line_buffer[1024];
+    size_t line_len = 0;
 
     while (1) {
-        size_t buffered_len = 0;
-        ESP_ERROR_CHECK(uart_get_buffered_data_len(UART_PORT_NUM, &buffered_len));
-
-        // Clamp to buffer size so we don't overflow 'data'
-        if (buffered_len > sizeof(data)) {
-            buffered_len = sizeof(data);
-        }
-
         int len = uart_read_bytes(
             UART_PORT_NUM,
-            data,
-            buffered_len,
-            100 / portTICK_PERIOD_MS
+            rx_chunk,
+            sizeof(rx_chunk),
+            pdMS_TO_TICKS(100)
         );
 
-        // NOTE: use %zu for size_t in C++
-        std::printf("Buffer Length: %zu\n", buffered_len);
-
         if (len > 0) {
-            // len is an int, so %d is correct
-            ESP_LOGI(TAG, "RX %d bytes", len);
-            std::printf("UART RX: ");
-            std::fwrite(data, 1, len, stdout);
-            std::printf("\n");
-        } else {
-            ESP_LOGI(TAG, "No data received");
+            for (int i = 0; i < len; i++) {
+                char c = (char)rx_chunk[i];
+
+                if (line_len < sizeof(line_buffer) - 1) {
+                    line_buffer[line_len++] = c;
+                } else {
+                    // overflow protection: reset buffer
+                    line_len = 0;
+                }
+
+                if (c == '\n') {
+                    line_buffer[line_len] = '\0';
+
+                    ESP_LOGI(TAG, "GPS line: %s", line_buffer);
+
+                    // TODO: parse complete NMEA sentence here
+
+                    line_len = 0;
+                }
+            }
         }
 
-        vTaskDelay(pdMS_TO_TICKS(500));
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
+}
+
+
+// GPS UART data parsing function
+bool parse_rmc_minimal(const char *line,
+                       double &lat,
+                       double &lon,
+                       char *time_out)
+{
+    if (strncmp(line, "$GNRMC", 6) != 0) return false;
+
+    char copy[128];
+    strcpy(copy, line);
+
+    char *token = strtok(copy, ",");
+    int field = 0;
+
+    const char *time = nullptr;
+    const char *lat_str = nullptr;
+    const char *lon_str = nullptr;
+    char lat_hemi = 0;
+    char lon_hemi = 0;
+
+    while (token != nullptr) {
+        switch (field) {
+            case 1: time = token; break;
+            case 2: if (token[0] != 'A') return false; break; // invalid fix
+            case 3: lat_str = token; break;
+            case 4: lat_hemi = token[0]; break;
+            case 5: lon_str = token; break;
+            case 6: lon_hemi = token[0]; break;
+        }
+        token = strtok(nullptr, ",");
+        field++;
+    }
+
+    if (!lat_str || !lon_str) return false;
+
+    // Convert to decimal
+    auto convert = [](const char *coord, char hemi) {
+        double val = atof(coord);
+        int deg = (int)(val / 100);
+        double min = val - deg * 100;
+        double dec = deg + min / 60.0;
+        return (hemi == 'S' || hemi == 'W') ? -dec : dec;
+    };
+
+    lat = convert(lat_str, lat_hemi);
+    lon = convert(lon_str, lon_hemi);
+
+    if (time && time_out) {
+        strcpy(time_out, time);
+    }
+
+    return true;
 }
 
 // Nonfunctional GPS I2C shared line implementation
@@ -556,14 +616,14 @@ static void uart_task_2(void *pvParameters)
 		
 		if (TOF_data_out.length == 16) {
 			memcpy(TOF_data, TOF_data_out.payload, sizeof(TOF_data));
-			//ESP_LOGI(TAG, "TOF to RPI: %u %u %u %u; %u %u %u %u; %u %u %u %u; %u %u %u %u", TOF_data_out.payload[0], TOF_data_out.payload[1], TOF_data_out.payload[2], TOF_data_out.payload[3], TOF_data_out.payload[4], TOF_data_out.payload[5], TOF_data_out.payload[6], TOF_data_out.payload[7], TOF_data_out.payload[8], TOF_data_out.payload[9], TOF_data_out.payload[10], TOF_data_out.payload[11], TOF_data_out.payload[12], TOF_data_out.payload[13], TOF_data_out.payload[14], TOF_data_out.payload[15]);
+			ESP_LOGI(TAG, "TOF to RPI: %u %u %u %u; %u %u %u %u; %u %u %u %u; %u %u %u %u", TOF_data_out.payload[0], TOF_data_out.payload[1], TOF_data_out.payload[2], TOF_data_out.payload[3], TOF_data_out.payload[4], TOF_data_out.payload[5], TOF_data_out.payload[6], TOF_data_out.payload[7], TOF_data_out.payload[8], TOF_data_out.payload[9], TOF_data_out.payload[10], TOF_data_out.payload[11], TOF_data_out.payload[12], TOF_data_out.payload[13], TOF_data_out.payload[14], TOF_data_out.payload[15]);
 		}
 		else {
 			ESP_LOGE(TAG, "TOF Queue Data Size Incorrect");
 		}
         
         //// Disabled for debugging:
-        //ESP_LOGI(TAG, "IMU to RPI: %.2f %.2f %.2f %.2f %.2f %.2f", IMU_data_out.payload[0], IMU_data_out.payload[1], IMU_data_out.payload[2], IMU_data_out.payload[3], IMU_data_out.payload[4], IMU_data_out.payload[5]);
+        ESP_LOGI(TAG, "IMU to RPI: %.2f %.2f %.2f %.2f %.2f %.2f", IMU_data_out.payload[0], IMU_data_out.payload[1], IMU_data_out.payload[2], IMU_data_out.payload[3], IMU_data_out.payload[4], IMU_data_out.payload[5]);
         
         /*
         int msg_len = snprintf((char *)msg, sizeof(msg),
@@ -658,19 +718,19 @@ static void uart_task_2(void *pvParameters)
         
         */
         // Testing hard coding:
-        /*
+        
         PWM_data_in.payload[0] = (uint8_t) 100;
 		PWM_data_in.payload[1] = (uint8_t) 90;
 		PWM_data_in.payload[2] = (uint8_t) 80;
 		PWM_data_in.payload[3] = (uint8_t) 70;
 		PWM_data_in.payload[4] = (uint8_t) 60;
 		PWM_data_in.length = 5;
-		*/
+		
 		
 		//// Disabled for debugging
-		/*
+		
 		xQueueOverwrite(PWMQueue, &PWM_data_in);
-		*/
+		
         vTaskDelay(pdMS_TO_TICKS(500));
     }
     
@@ -715,7 +775,7 @@ static void imu_task(void *pvParameters) {
 			// get orientation
 			if (imu.rpt.rv.has_new_data()) {
 				bno08x_euler_angle_t euler = imu.rpt.rv.get_euler();
-				ESP_LOGI(TAG, "Euler: roll = %.2f, pitch = %.2f, yaw = %.2f", euler.x, euler.y, euler.z);
+				//ESP_LOGI(TAG, "Euler: roll = %.2f, pitch = %.2f, yaw = %.2f", euler.x, euler.y, euler.z);
 				
 		        IMU_data_in.payload[0] = (float) euler.x;
 				IMU_data_in.payload[1] = (float) euler.y;
@@ -728,7 +788,7 @@ static void imu_task(void *pvParameters) {
 			// get angular velocity
 			if (imu.rpt.cal_gyro.has_new_data()) {
 				bno08x_gyro_t g = imu.rpt.cal_gyro.get();
-				ESP_LOGI(TAG, "Gyro: x = %.2f, y = %.2f, z = %.2f rad/s", g.x, g.y, g.z);
+				//ESP_LOGI(TAG, "Gyro: x = %.2f, y = %.2f, z = %.2f rad/s", g.x, g.y, g.z);
 				IMU_data_in.payload[3] = (float) g.x;
 				IMU_data_in.payload[4] = (float) g.y;
 				IMU_data_in.payload[5] = (float) g.z;
@@ -896,13 +956,13 @@ extern "C" void tof_imu_task(void *pvParameters) {
 						uint16_t mm =
 							results
 								.distance_mm[VL53L5CX_NB_TARGET_PER_ZONE * idx];
-						printf("%u,", mm);
+						//printf("%u,", mm);
 						
 						TOF_data_in.payload[idx] = mm;
 					}
-					printf(";");
+					//printf(";");
 				}
-				printf("\n");
+				//printf("\n");
 				fflush(stdout);
 				
 				TOF_data_in.length = 16;
@@ -1082,25 +1142,25 @@ extern "C" void app_main(void)
 	
 
     //// Create imu task
-    //xTaskCreate(imu_task, "imu_task", 4096, nullptr, 10, nullptr);
+    xTaskCreate(imu_task, "imu_task", 4096, nullptr, 10, nullptr);
  	
  	//// I2C init for GPS & TOF
  	//i2c_init();
  	
     //// Create tof task
-    //xTaskCreate(tof_imu_task, "tof_task", 4096, NULL, 10, NULL);
+    xTaskCreate(tof_imu_task, "tof_task", 4096, NULL, 10, NULL);
     
     
     
     //// Create motor driver tasks
-    //pwm_init();
-    //xTaskCreate(pwm_handler, "motor_driver_task", 4096, nullptr, 10, nullptr);
+    pwm_init();
+    xTaskCreate(pwm_handler, "motor_driver_task", 4096, nullptr, 10, nullptr);
     
     
 	
 	//// Create GPS UART Task
-	uart_init();
-    xTaskCreate(uart_task, "uart_task", 4096, NULL, 5, NULL);
+	//uart_init();
+    //xTaskCreate(uart_task, "uart_task", 4096, NULL, 5, NULL);
     
     //// Create GPS I2C Task
     //xTaskCreate(i2c_gps_task,"i2c_gps_task",4096,nullptr,10,nullptr);
@@ -1108,8 +1168,8 @@ extern "C" void app_main(void)
     
     
     //// Create ESP-RPI UART Task
-    //uart_init_2();
-    //xTaskCreate(uart_task_2, "uart2_task", 4096, nullptr, 5, nullptr);
+    uart_init_2();
+    xTaskCreate(uart_task_2, "uart2_task", 4096, nullptr, 5, nullptr);
 	
     
 
