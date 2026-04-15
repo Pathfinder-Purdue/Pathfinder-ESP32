@@ -129,7 +129,7 @@ static constexpr gpio_num_t VL53L5CX_PIN_SDA = GPIO_NUM_15;
 static constexpr gpio_num_t VL53L5CX_PIN_SCL = GPIO_NUM_16;
 static constexpr gpio_num_t VL53L5CX_PIN_INT = GPIO_NUM_NC;
 static constexpr gpio_num_t VL53L5CX_PIN_I2C_RST = GPIO_NUM_NC;
-static constexpr gpio_num_t VL53L5CX_PIN_LPN = GPIO_NUM_5;
+static constexpr gpio_num_t VL53L5CX_PIN_LPN = GPIO_NUM_6;
 static constexpr gpio_num_t VL53L5CX_PIN_PWREN = GPIO_NUM_NC;
 
 static constexpr i2c_port_num_t VL53L5CX_I2C_PORT = I2C_NUM_0;
@@ -417,7 +417,7 @@ static void uart_task_2(void *pvParameters)
 			GPS_data[1] = GPS_data_out.payload[1];
 		}
 		
-		ESP_LOGI(TAG, "GP to RPI: %s %f %f", GPS_time, GPS_data_out.payload[0], GPS_data_out.payload[1]);
+		//ESP_LOGI(TAG, "GP to RPI: %s %f %f", GPS_time, GPS_data_out.payload[0], GPS_data_out.payload[1]);
 		
 		
 		// Retrieve TOF data from queue
@@ -955,17 +955,17 @@ extern "C" void app_main(void)
 	
 
     //// Create imu task
-    //xTaskCreate(imu_task, "imu_task", 4096, nullptr, 10, nullptr);
+    xTaskCreate(imu_task, "imu_task", 4096, nullptr, 10, nullptr);
  	
  	
     //// Create tof task
-    //xTaskCreate(tof_imu_task, "tof_task", 4096, NULL, 10, NULL);
+    xTaskCreate(tof_imu_task, "tof_task", 4096, NULL, 10, NULL);
     
     
     
     //// Create motor driver tasks
-    //pwm_init();
-    //xTaskCreate(pwm_handler, "motor_driver_task", 4096, nullptr, 10, nullptr);
+    pwm_init();
+    xTaskCreate(pwm_handler, "motor_driver_task", 4096, nullptr, 10, nullptr);
     
     
 	
