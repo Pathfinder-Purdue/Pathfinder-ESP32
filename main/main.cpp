@@ -937,7 +937,7 @@ static void pwm_handler(void *pvParameters) {
 /// -------------------------------------------------------------------------------------------------------------- ///
 
 
-
+/*
 
 // Main program cycle
 
@@ -986,3 +986,40 @@ extern "C" void app_main(void)
     
 
 }
+*/
+
+// GPIO pin testing code
+
+void app_main(void)
+{
+    gpio_reset_pin(15);
+    gpio_reset_pin(16);
+    gpio_reset_pin(15);
+    gpio_reset_pin(15);
+    
+    
+    gpio_set_direction(15, GPIO_MODE_OUTPUT);
+    gpio_set_direction(16, GPIO_MODE_OUTPUT);
+    gpio_set_direction(18, GPIO_MODE_OUTPUT);
+    gpio_set_direction(18, GPIO_MODE_OUTPUT);
+    
+    
+    
+    gpio_set_level(15, 1);
+    gpio_set_level(16, 1);
+    gpio_set_level(18, 1);
+    gpio_set_level(18, 1);
+   
+
+
+/*
+    while (1) {
+        gpio_set_level(18, 1);
+        vTaskDelay(pdMS_TO_TICKS(500));
+        gpio_set_level(18, 0);
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+    
+ */
+}
+
