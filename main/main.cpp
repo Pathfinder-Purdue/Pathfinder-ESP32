@@ -294,6 +294,8 @@ static void uart_task(void *pvParameters)
 					if (parse_rmc_minimal(line_buffer, GPS_data_in.payload[1], GPS_data_in.payload[1], GPS_data_in.time)) {
     					//ESP_LOGI("GPS", "Time=%s Lat=%.6f Lon=%.6f", GPS_data_in.payload[1], GPS_data_in.payload[1], GPS_data_in.time);
     					
+    					GPS_data_in.length = 3;
+    					
     					xQueueOverwrite(GPSQueue, &GPS_data_in);
 					}
 
@@ -409,7 +411,13 @@ static void uart_task_2(void *pvParameters)
 		}
 		else{
 			ESP_LOGE(TAG, "GPS Queue Data Size Incorrect");
+			
+			strcpy(GPS_time, GPS_data_out.time);
+			GPS_data[0] = GPS_data_out.payload[0];
+			GPS_data[1] = GPS_data_out.payload[1];
 		}
+		
+		ESP_LOGI(TAG, "GP to RPI: %s %f %f", GPS_time, GPS_data_out.payload[0], GPS_data_out.payload[1]);
 		
 		
 		// Retrieve TOF data from queue
@@ -947,28 +955,24 @@ extern "C" void app_main(void)
 	
 
     //// Create imu task
-    xTaskCreate(imu_task, "imu_task", 4096, nullptr, 10, nullptr);
+    //xTaskCreate(imu_task, "imu_task", 4096, nullptr, 10, nullptr);
  	
- 	//// I2C init for GPS & TOF
- 	//i2c_init();
  	
     //// Create tof task
-    xTaskCreate(tof_imu_task, "tof_task", 4096, NULL, 10, NULL);
+    //xTaskCreate(tof_imu_task, "tof_task", 4096, NULL, 10, NULL);
     
     
     
     //// Create motor driver tasks
-    pwm_init();
-    xTaskCreate(pwm_handler, "motor_driver_task", 4096, nullptr, 10, nullptr);
+    //pwm_init();
+    //xTaskCreate(pwm_handler, "motor_driver_task", 4096, nullptr, 10, nullptr);
     
     
 	
 	//// Create GPS UART Task
-	//uart_init();
-    //xTaskCreate(uart_task, "uart_task", 4096, NULL, 5, NULL);
+	uart_init();
+    xTaskCreate(uart_task, "uart_task", 4096, NULL, 5, NULL);
     
-    //// Create GPS I2C Task
-    //xTaskCreate(i2c_gps_task,"i2c_gps_task",4096,nullptr,10,nullptr);
     
     
     
