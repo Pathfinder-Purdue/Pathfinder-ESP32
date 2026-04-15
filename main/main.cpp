@@ -154,7 +154,56 @@ QueueHandle_t DRIVERQueue;
 
 
 /// -------------------------------------------------------------------------------------------------------------- ///
+// GPS UART data parsing function
+bool parse_rmc_minimal(const char *line, double &lat, double &lon, char *time_out)
+{
+    if (strncmp(line, "$GNRMC", 6) != 0) return false;
 
+    char copy[128];
+    strcpy(copy, line);
+
+    char *token = strtok(copy, ",");
+    int field = 0;
+
+    const char *time = nullptr;
+    const char *lat_str = nullptr;
+    const char *lon_str = nullptr;
+    char lat_hemi = 0;
+    char lon_hemi = 0;
+
+    while (token != nullptr) {
+        switch (field) {
+            case 1: time = token; break;
+            case 2: if (token[0] != 'A') return false; break; // invalid fix
+            case 3: lat_str = token; break;
+            case 4: lat_hemi = token[0]; break;
+            case 5: lon_str = token; break;
+            case 6: lon_hemi = token[0]; break;
+        }
+        token = strtok(nullptr, ",");
+        field++;
+    }
+
+    if (!lat_str || !lon_str) return false;
+
+    // Convert to decimal
+    auto convert = [](const char *coord, char hemi) {
+        double val = atof(coord);
+        int deg = (int)(val / 100);
+        double min = val - deg * 100;
+        double dec = deg + min / 60.0;
+        return (hemi == 'S' || hemi == 'W') ? -dec : dec;
+    };
+
+    lat = convert(lat_str, lat_hemi);
+    lon = convert(lon_str, lon_hemi);
+
+    if (time && time_out) {
+        strcpy(time_out, time);
+    }
+
+    return true;
+}
 
 // GPS UART initialization
 static void uart_init(void)
@@ -227,9 +276,15 @@ static void uart_task(void *pvParameters)
                 if (c == '\n') {
                     line_buffer[line_len] = '\0';
 
-                    ESP_LOGI(TAG, "GPS line: %s", line_buffer);
+                    //ESP_LOGI(TAG, "GPS line: %s", line_buffer);
 
                     // TODO: parse complete NMEA sentence here
+                    double lat, lon;
+					char time[16];
+
+					if (parse_rmc_minimal(line_buffer, lat, lon, time)) {
+    					ESP_LOGI("GPS", "Time=%s Lat=%.6f Lon=%.6f", time, lat, lon);
+					}
 
                     line_len = 0;
                 }
@@ -241,59 +296,6 @@ static void uart_task(void *pvParameters)
 }
 
 
-// GPS UART data parsing function
-bool parse_rmc_minimal(const char *line,
-                       double &lat,
-                       double &lon,
-                       char *time_out)
-{
-    if (strncmp(line, "$GNRMC", 6) != 0) return false;
-
-    char copy[128];
-    strcpy(copy, line);
-
-    char *token = strtok(copy, ",");
-    int field = 0;
-
-    const char *time = nullptr;
-    const char *lat_str = nullptr;
-    const char *lon_str = nullptr;
-    char lat_hemi = 0;
-    char lon_hemi = 0;
-
-    while (token != nullptr) {
-        switch (field) {
-            case 1: time = token; break;
-            case 2: if (token[0] != 'A') return false; break; // invalid fix
-            case 3: lat_str = token; break;
-            case 4: lat_hemi = token[0]; break;
-            case 5: lon_str = token; break;
-            case 6: lon_hemi = token[0]; break;
-        }
-        token = strtok(nullptr, ",");
-        field++;
-    }
-
-    if (!lat_str || !lon_str) return false;
-
-    // Convert to decimal
-    auto convert = [](const char *coord, char hemi) {
-        double val = atof(coord);
-        int deg = (int)(val / 100);
-        double min = val - deg * 100;
-        double dec = deg + min / 60.0;
-        return (hemi == 'S' || hemi == 'W') ? -dec : dec;
-    };
-
-    lat = convert(lat_str, lat_hemi);
-    lon = convert(lon_str, lon_hemi);
-
-    if (time && time_out) {
-        strcpy(time_out, time);
-    }
-
-    return true;
-}
 
 // Nonfunctional GPS I2C shared line implementation
 /*
@@ -1142,25 +1144,25 @@ extern "C" void app_main(void)
 	
 
     //// Create imu task
-    xTaskCreate(imu_task, "imu_task", 4096, nullptr, 10, nullptr);
+    //xTaskCreate(imu_task, "imu_task", 4096, nullptr, 10, nullptr);
  	
  	//// I2C init for GPS & TOF
  	//i2c_init();
  	
     //// Create tof task
-    xTaskCreate(tof_imu_task, "tof_task", 4096, NULL, 10, NULL);
+    //xTaskCreate(tof_imu_task, "tof_task", 4096, NULL, 10, NULL);
     
     
     
     //// Create motor driver tasks
-    pwm_init();
-    xTaskCreate(pwm_handler, "motor_driver_task", 4096, nullptr, 10, nullptr);
+    //pwm_init();
+    //xTaskCreate(pwm_handler, "motor_driver_task", 4096, nullptr, 10, nullptr);
     
     
 	
 	//// Create GPS UART Task
-	//uart_init();
-    //xTaskCreate(uart_task, "uart_task", 4096, NULL, 5, NULL);
+	uart_init();
+    xTaskCreate(uart_task, "uart_task", 4096, NULL, 5, NULL);
     
     //// Create GPS I2C Task
     //xTaskCreate(i2c_gps_task,"i2c_gps_task",4096,nullptr,10,nullptr);
@@ -1168,8 +1170,8 @@ extern "C" void app_main(void)
     
     
     //// Create ESP-RPI UART Task
-    uart_init_2();
-    xTaskCreate(uart_task_2, "uart2_task", 4096, nullptr, 5, nullptr);
+    //uart_init_2();
+    //xTaskCreate(uart_task_2, "uart2_task", 4096, nullptr, 5, nullptr);
 	
     
 
