@@ -678,7 +678,7 @@ static void setup_optional_pins() {
 	vTaskDelay(pdMS_TO_TICKS(20));
 }
 
-extern "C" void tof_imu_task(void *pvParameters) {
+extern "C" void tof_task(void *pvParameters) {
 	TOFMessage TOF_data_in;
 	
 	
@@ -959,7 +959,7 @@ extern "C" void app_main(void)
  	
  	
     //// Create tof task
-    xTaskCreate(tof_imu_task, "tof_task", 4096, NULL, 10, NULL);
+    xTaskCreate(tof_task, "tof_task", 4096, NULL, 10, NULL);
     
     
     
