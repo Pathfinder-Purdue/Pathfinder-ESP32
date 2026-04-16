@@ -85,7 +85,7 @@
 #define PWM_CHANNEL_4     LEDC_CHANNEL_4
 
 
-static const char *TAG = "neopixel";
+static const char *TAG2 = "neopixel";
 
 static constexpr gpio_num_t NEOPIXEL_GPIO = GPIO_NUM_38;
 static constexpr uint32_t RMT_LED_RESOLUTION_HZ = 10000000; // 10 MHz
@@ -187,7 +187,7 @@ static void set_pixel_rgb(uint8_t r, uint8_t g, uint8_t b) {
 }
 
 static void RGB_task(void *pvParameters) {
-	ESP_LOGI(TAG, "Init RMT TX on GPIO %d", (int)NEOPIXEL_GPIO);
+	ESP_LOGI(TAG2, "Init RMT TX on GPIO %d", (int)NEOPIXEL_GPIO);
 
 	rmt_channel_handle_t led_chan = NULL;
 	rmt_tx_channel_config_t tx_chan_cfg = {};
@@ -1101,7 +1101,7 @@ extern "C" void app_main(void)
 	
 	
 	//// RGB Task
-	xTaskCreate(rgb_task, "rgb_task", 4096, nullptr, 10, nullptr);
+	xTaskCreate(RGB_task, "rgb_task", 4096, nullptr, 10, nullptr);
 	
 
     //// Create imu task
