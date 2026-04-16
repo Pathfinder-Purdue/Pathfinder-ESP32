@@ -13,6 +13,7 @@
 #include "driver/i2c_master.h"
 #include "esp_log.h"
 #include "esp_err.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/idf_additions.h"
 #include "freertos/projdefs.h"
@@ -24,6 +25,7 @@
 #include <cstdint>
 #include <cstring>
 #include <cstdlib>
+#include "soc/gpio_num.h"
 #include "vl53l5cx_api.h"
 #include "esp_check.h"
 
@@ -90,6 +92,7 @@ typedef struct {
 typedef struct {
     uint8_t length;
     uint8_t payload[5];
+    int64_t rx_time_us;
 } PWMMessage;
 
 typedef struct {
@@ -129,7 +132,7 @@ static constexpr gpio_num_t VL53L5CX_PIN_SDA = GPIO_NUM_15;
 static constexpr gpio_num_t VL53L5CX_PIN_SCL = GPIO_NUM_16;
 static constexpr gpio_num_t VL53L5CX_PIN_INT = GPIO_NUM_NC;
 static constexpr gpio_num_t VL53L5CX_PIN_I2C_RST = GPIO_NUM_NC;
-static constexpr gpio_num_t VL53L5CX_PIN_LPN = GPIO_NUM_5;
+static constexpr gpio_num_t VL53L5CX_PIN_LPN = GPIO_NUM_7;
 static constexpr gpio_num_t VL53L5CX_PIN_PWREN = GPIO_NUM_NC;
 
 static constexpr i2c_port_num_t VL53L5CX_I2C_PORT = I2C_NUM_0;
@@ -498,6 +501,7 @@ static void uart_task_2(void *pvParameters)
 		        PWM_data_in.payload[2] = (uint8_t)p3;
 		        PWM_data_in.payload[3] = (uint8_t)p4;
 		        PWM_data_in.payload[4] = (uint8_t)p5;
+		        PWM_data_in.rx_time_us = esp_timer_get_time();
 		       
 		
 		
@@ -514,6 +518,7 @@ static void uart_task_2(void *pvParameters)
 				PWM_data_in.payload[3] = 0;
 				PWM_data_in.payload[4] = 0;
         		PWM_data_in.length = 0;
+        		PWM_data_in.rx_time_us = esp_timer_get_time();
     		}
 		            
             
@@ -527,6 +532,7 @@ static void uart_task_2(void *pvParameters)
 			PWM_data_in.payload[3] = 0;
 			PWM_data_in.payload[4] = 0;
 			PWM_data_in.length = 5;
+			PWM_data_in.rx_time_us = esp_timer_get_time();
         }
         
         
@@ -564,6 +570,10 @@ static BNO08x imu;
 
 // IMU handler task
 static void imu_task(void *pvParameters) {
+	TickType_t last_imu_tick = 0;
+	float imu_hz = 0.0f;
+	uint32_t imu_sample_count = 0;
+	bool got_new_imu_sample = false;
 	
 	IMUMessage IMU_data_in;
 
@@ -584,16 +594,20 @@ static void imu_task(void *pvParameters) {
 
     // Let FreeRTOS scheduler handle rest
     while (true) {
+		got_new_imu_sample = false;
+		
+		
 		if (imu_ok && imu.data_available()) {
 			// get orientation
 			if (imu.rpt.rv.has_new_data()) {
 				bno08x_euler_angle_t euler = imu.rpt.rv.get_euler();
-				//ESP_LOGI(TAG, "Euler: roll = %.2f, pitch = %.2f, yaw = %.2f", euler.x, euler.y, euler.z);
+				ESP_LOGI(TAG, "Euler: roll = %.2f, pitch = %.2f, yaw = %.2f", euler.x, euler.y, euler.z);
 				
 		        IMU_data_in.payload[0] = (float) euler.x;
 				IMU_data_in.payload[1] = (float) euler.y;
 				IMU_data_in.payload[2] = (float) euler.z;
 				IMU_data_in.euler_length = 3;
+				got_new_imu_sample = true;
 				
 				
 			}
@@ -601,23 +615,47 @@ static void imu_task(void *pvParameters) {
 			// get angular velocity
 			if (imu.rpt.cal_gyro.has_new_data()) {
 				bno08x_gyro_t g = imu.rpt.cal_gyro.get();
-				//ESP_LOGI(TAG, "Gyro: x = %.2f, y = %.2f, z = %.2f rad/s", g.x, g.y, g.z);
+				ESP_LOGI(TAG, "Gyro: x = %.2f, y = %.2f, z = %.2f rad/s", g.x, g.y, g.z);
 				IMU_data_in.payload[3] = (float) g.x;
 				IMU_data_in.payload[4] = (float) g.y;
 				IMU_data_in.payload[5] = (float) g.z;
 				IMU_data_in.g_length = 3;
+				got_new_imu_sample = true;
 			}
+			
+			
 		}
 		else {
 			ESP_LOGI(TAG, "IMU Not working");
 		}
 		
 		
-		xQueueOverwrite(IMUQueue, &IMU_data_in);
+		
+		
+		if (got_new_imu_sample) {
+		    TickType_t now = xTaskGetTickCount();
+		
+		    if (last_imu_tick != 0) {
+		        float dt = (now - last_imu_tick) * (portTICK_PERIOD_MS / 1000.0f);
+		        if (dt > 0.0f) {
+		            imu_hz = 1.0f / dt;
+		        }
+		    }
+		
+		    last_imu_tick = now;
+		    imu_sample_count++;
+		
+		    ESP_LOGI(TAG, "IMU rate: %.2f Hz", imu_hz);
+		    xQueueOverwrite(IMUQueue, &IMU_data_in);
+		}
+		
+		
+		//xQueueOverwrite(IMUQueue, &IMU_data_in);
 		vTaskDelay(pdMS_TO_TICKS(10));
 		
     }
     
+	    
     
     
 }
@@ -678,7 +716,11 @@ static void setup_optional_pins() {
 	vTaskDelay(pdMS_TO_TICKS(20));
 }
 
-extern "C" void tof_imu_task(void *pvParameters) {
+extern "C" void tof_task(void *pvParameters) {
+	TickType_t last_tof_tick = 0;
+	float tof_hz = 0.0f;
+	uint32_t tof_sample_count = 0;
+	
 	TOFMessage TOF_data_in;
 	
 	
@@ -769,16 +811,29 @@ extern "C" void tof_imu_task(void *pvParameters) {
 						uint16_t mm =
 							results
 								.distance_mm[VL53L5CX_NB_TARGET_PER_ZONE * idx];
-						//printf("%u,", mm);
+						printf("%u,", mm);
 						
 						TOF_data_in.payload[idx] = mm;
 					}
-					//printf(";");
+					printf(";");
 				}
-				//printf("\n");
+				printf("\n");
 				fflush(stdout);
 				
 				TOF_data_in.length = 16;
+				
+		        TickType_t now = xTaskGetTickCount();
+		        if (last_tof_tick != 0) {
+		            float dt = (now - last_tof_tick) * (portTICK_PERIOD_MS / 1000.0f);
+		            if (dt > 0.0f) {
+		                tof_hz = 1.0f / dt;
+		            }
+		        }
+		
+		        last_tof_tick = now;
+		        tof_sample_count++;
+		
+		        ESP_LOGI(TAG, "TOF rate: %.2f Hz", tof_hz);
 			}
 			else {
 				TOF_data_in.length = 0;
@@ -916,6 +971,11 @@ static void pwm_handler(void *pvParameters) {
 		
 		if (activation.length == 5) {
 			set_pwm_percent(activation.payload[0], activation.payload[1], activation.payload[2], activation.payload[3], activation.payload[4]);
+			
+			int64_t pwm_applied_us = esp_timer_get_time();
+			int64_t latency_us = pwm_applied_us - activation.rx_time_us;
+			ESP_LOGI("PWM Task", "PWM latency: %lld us (%.3f ms)",
+			         latency_us, latency_us / 1000.0);
 		}
 		else {
 			ESP_LOGE("PWM Task: ", "PWM Task recieved incomplete activation data.\n");
@@ -937,7 +997,7 @@ static void pwm_handler(void *pvParameters) {
 /// -------------------------------------------------------------------------------------------------------------- ///
 
 
-/*
+
 
 // Main program cycle
 
@@ -959,7 +1019,7 @@ extern "C" void app_main(void)
  	
  	
     //// Create tof task
-    //xTaskCreate(tof_imu_task, "tof_task", 4096, NULL, 10, NULL);
+    xTaskCreate(tof_task, "tof_task", 4096, NULL, 10, NULL);
     
     
     
@@ -970,15 +1030,15 @@ extern "C" void app_main(void)
     
 	
 	//// Create GPS UART Task
-	uart_init();
-    xTaskCreate(uart_task, "uart_task", 4096, NULL, 5, NULL);
+	//uart_init();
+    //xTaskCreate(uart_task, "uart_task", 4096, NULL, 5, NULL);
     
     
     
     
     //// Create ESP-RPI UART Task
-    uart_init_2();
-    xTaskCreate(uart_task_2, "uart2_task", 4096, nullptr, 5, nullptr);
+    //uart_init_2();
+    //xTaskCreate(uart_task_2, "uart2_task", 4096, nullptr, 5, nullptr);
 	
     
 
@@ -986,40 +1046,50 @@ extern "C" void app_main(void)
     
 
 }
-*/
+
 
 // GPIO pin testing code
-
-void app_main(void)
-{
-    gpio_reset_pin(15);
-    gpio_reset_pin(16);
-    gpio_reset_pin(15);
-    gpio_reset_pin(15);
-    
-    
-    gpio_set_direction(15, GPIO_MODE_OUTPUT);
-    gpio_set_direction(16, GPIO_MODE_OUTPUT);
-    gpio_set_direction(18, GPIO_MODE_OUTPUT);
-    gpio_set_direction(18, GPIO_MODE_OUTPUT);
-    
-    
-    
-    gpio_set_level(15, 1);
-    gpio_set_level(16, 1);
-    gpio_set_level(18, 1);
-    gpio_set_level(18, 1);
-   
-
-
 /*
+extern "C" void app_main(void)
+{
+    gpio_reset_pin(GPIO_NUM_8);
+    gpio_reset_pin(GPIO_NUM_11);
+    gpio_reset_pin(GPIO_NUM_10);
+    gpio_reset_pin(GPIO_NUM_12);
+    gpio_reset_pin(GPIO_NUM_13);
+    gpio_reset_pin(GPIO_NUM_9);
+    
+    
+    
+    gpio_set_direction(GPIO_NUM_8, GPIO_MODE_OUTPUT);
+    gpio_set_direction(GPIO_NUM_11, GPIO_MODE_OUTPUT);
+    gpio_set_direction(GPIO_NUM_10, GPIO_MODE_OUTPUT);
+    gpio_set_direction(GPIO_NUM_12, GPIO_MODE_OUTPUT);
+    gpio_set_direction(GPIO_NUM_13, GPIO_MODE_OUTPUT);
+    gpio_set_direction(GPIO_NUM_9, GPIO_MODE_OUTPUT);
+    
+    
+
+
+
     while (1) {
-        gpio_set_level(18, 1);
+        gpio_set_level(GPIO_NUM_8, 1);
+	    gpio_set_level(GPIO_NUM_11, 1);
+	    gpio_set_level(GPIO_NUM_10, 1);
+	    gpio_set_level(GPIO_NUM_12, 1);
+	    gpio_set_level(GPIO_NUM_13, 1);
+	    gpio_set_level(GPIO_NUM_9, 1);
         vTaskDelay(pdMS_TO_TICKS(500));
-        gpio_set_level(18, 0);
+        
+        gpio_set_level(GPIO_NUM_8, 0);
+	    gpio_set_level(GPIO_NUM_11, 0);
+	    gpio_set_level(GPIO_NUM_10, 0);
+	    gpio_set_level(GPIO_NUM_12, 0);
+	    gpio_set_level(GPIO_NUM_13, 0);
+	    gpio_set_level(GPIO_NUM_9, 0);
         vTaskDelay(pdMS_TO_TICKS(500));
     }
     
- */
-}
 
+}
+*/
