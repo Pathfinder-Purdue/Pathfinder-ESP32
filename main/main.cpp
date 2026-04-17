@@ -25,7 +25,6 @@
 #include <cstdint>
 #include <cstring>
 #include <cstdlib>
-#include "portmacro.h"
 #include "soc/gpio_num.h"
 #include "vl53l5cx_api.h"
 #include "esp_check.h"
@@ -962,39 +961,36 @@ static void pwm_handler(void *pvParameters) {
 	uint8_t percent5 = 100;
 	*/
 	
-	PWMMessage activation = {};
+	PWMMessage activation;
 	uint8_t testPercent = 50;
 
 	
 	while(1) {
 		
-		//xQueuePeek(PWMQueue, &activation, 0);
+		xQueuePeek(PWMQueue, &activation, 0);
 		
-		if (xQueueReceive(PWMQueue, &activation, portMAX_DELAY) == pdTRUE) {
+		if (activation.length == 5) {
+			set_pwm_percent(activation.payload[0], activation.payload[1], activation.payload[2], activation.payload[3], activation.payload[4]);
 			
-			if (activation.length == 5) {
-				set_pwm_percent(activation.payload[0], activation.payload[1], activation.payload[2], activation.payload[3], activation.payload[4]);
-				
-				int64_t pwm_applied_us = esp_timer_get_time();
-				int64_t latency_us = pwm_applied_us - activation.rx_time_us;
-				ESP_LOGI("PWM Task", "PWM latency: %lld us (%.3f ms)",
-				         latency_us, latency_us / 1000.0);
-			}
-			else {
-				ESP_LOGE("PWM Task: ", "PWM Task recieved incomplete activation data.\n");
-				
-				int64_t pwm_applied_us = esp_timer_get_time();
-				int64_t latency_us = pwm_applied_us - activation.rx_time_us;
-				ESP_LOGI("PWM Task", "PWM latency: %lld us (%.3f ms)",
-				         latency_us, latency_us / 1000.0);
-			}
-			
-			// Hard coding for debugging:
-			//set_pwm_percent(testPercent, testPercent, testPercent, testPercent, testPercent);
-			ESP_LOGI("PWM Task: ", "PWM Set to: %d, %d, %d, %d, %d.\n", activation.payload[0], activation.payload[1], activation.payload[2], activation.payload[3], activation.payload[4]);
-			
-			//vTaskDelay(pdMS_TO_TICKS(500));
+			int64_t pwm_applied_us = esp_timer_get_time();
+			int64_t latency_us = pwm_applied_us - activation.rx_time_us;
+			ESP_LOGI("PWM Task", "PWM latency: %lld us (%.3f ms)",
+			         latency_us, latency_us / 1000.0);
 		}
+		else {
+			ESP_LOGE("PWM Task: ", "PWM Task recieved incomplete activation data.\n");
+			
+			int64_t pwm_applied_us = esp_timer_get_time();
+			int64_t latency_us = pwm_applied_us - activation.rx_time_us;
+			ESP_LOGI("PWM Task", "PWM latency: %lld us (%.3f ms)",
+			         latency_us, latency_us / 1000.0);
+		}
+		
+		// Hard coding for debugging:
+		//set_pwm_percent(testPercent, testPercent, testPercent, testPercent, testPercent);
+		ESP_LOGI("PWM Task: ", "PWM Set to: %d, %d, %d, %d, %d.\n", activation.payload[0], activation.payload[1], activation.payload[2], activation.payload[3], activation.payload[4]);
+		
+		vTaskDelay(pdMS_TO_TICKS(500));
 	}
 }
 
@@ -1033,14 +1029,14 @@ extern "C" void app_main(void)
     
     
     //// Create motor driver tasks
-    //pwm_init();
-    //xTaskCreate(pwm_handler, "motor_driver_task", 4096, nullptr, 10, nullptr);
+    pwm_init();
+    xTaskCreate(pwm_handler, "motor_driver_task", 4096, nullptr, 10, nullptr);
     
     
 	
 	//// Create GPS UART Task
-	//uart_init();
-    //xTaskCreate(uart_task, "uart_task", 4096, NULL, 5, NULL);
+	uart_init();
+    xTaskCreate(uart_task, "uart_task", 4096, NULL, 5, NULL);
     
     
     
