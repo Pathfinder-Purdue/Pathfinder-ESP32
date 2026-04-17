@@ -95,16 +95,3 @@ Measured via outputs to terminal.
 (
 )
 
-
-UART Communication:
-- The Microcontroller shall compile data from multiple sensors into a single package:
-
-
-- The Microcontroller shall communicate with the Onboard Computer over UART:
-
-
-- The Microcontroller shall send sensor data to the onboard computer:
-
-
-- The Microcontroller shall receive motor strength data from the onboard computer:
-
