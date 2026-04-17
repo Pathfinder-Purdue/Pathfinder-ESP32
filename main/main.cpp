@@ -87,7 +87,7 @@
 
 static const char *TAG2 = "neopixel";
 
-static constexpr gpio_num_t NEOPIXEL_GPIO = GPIO_NUM_48;
+static constexpr gpio_num_t NEOPIXEL_GPIO = GPIO_NUM_38;
 static constexpr uint32_t RMT_LED_RESOLUTION_HZ = 10000000; // 10 MHz
 static constexpr uint32_t STEP_DELAY_MS = 500;
 
