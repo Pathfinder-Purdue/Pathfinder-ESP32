@@ -9,7 +9,7 @@
 #include "esp_check.h"
 #include "led_strip_encoder.h"
 
-static const char *TAG2 = "led_encoder";
+static const char *TAG = "led_encoder";
 
 typedef struct {
 	rmt_encoder_t base;
@@ -83,11 +83,11 @@ esp_err_t rmt_new_led_strip_encoder(const led_strip_encoder_config_t *config,
 									rmt_encoder_handle_t *ret_encoder) {
 	esp_err_t ret = ESP_OK;
 	rmt_led_strip_encoder_t *led_encoder = NULL;
-	ESP_GOTO_ON_FALSE(config && ret_encoder, ESP_ERR_INVALID_ARG, err, TAG2,
+	ESP_GOTO_ON_FALSE(config && ret_encoder, ESP_ERR_INVALID_ARG, err, TAG,
 					  "invalid argument");
 
 	led_encoder = rmt_alloc_encoder_mem(sizeof(rmt_led_strip_encoder_t));
-	ESP_GOTO_ON_FALSE(led_encoder, ESP_ERR_NO_MEM, err, TAG2,
+	ESP_GOTO_ON_FALSE(led_encoder, ESP_ERR_NO_MEM, err, TAG,
 					  "no mem for led strip encoder");
 
 	led_encoder->base.encode = rmt_encode_led_strip;
@@ -113,12 +113,12 @@ esp_err_t rmt_new_led_strip_encoder(const led_strip_encoder_config_t *config,
 	};
 	ESP_GOTO_ON_ERROR(rmt_new_bytes_encoder(&bytes_encoder_config,
 											&led_encoder->bytes_encoder),
-					  err, TAG2, "create bytes encoder failed");
+					  err, TAG, "create bytes encoder failed");
 
 	rmt_copy_encoder_config_t copy_encoder_config = {};
 	ESP_GOTO_ON_ERROR(
 		rmt_new_copy_encoder(&copy_encoder_config, &led_encoder->copy_encoder),
-		err, TAG2, "create copy encoder failed");
+		err, TAG, "create copy encoder failed");
 
 	uint32_t reset_ticks = config->resolution / 1000000 * 50 / 2;
 	led_encoder->reset_code = (rmt_symbol_word_t){
