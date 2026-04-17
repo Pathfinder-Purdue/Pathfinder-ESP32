@@ -25,6 +25,7 @@
 #include <cstdint>
 #include <cstring>
 #include <cstdlib>
+#include "portmacro.h"
 #include "soc/gpio_num.h"
 #include "vl53l5cx_api.h"
 #include "esp_check.h"
@@ -365,6 +366,9 @@ static void uart_init_2(void)
 // ESP-RPI Task
 static void uart_task_2(void *pvParameters)
 {
+	// For debugging
+	uint8_t test_constant[5] = {0, 0, 0, 0, 0};
+	
 	uint16_t TOF_data [16] = {0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1};
 	float IMU_data [6] = {0, 23, 0, 0, 0, 0};
 	double GPS_data [2] = {42.3588337, -71.0578303};
@@ -538,12 +542,19 @@ static void uart_task_2(void *pvParameters)
         
         // Testing hard coding:
         
-        //PWM_data_in.payload[0] = (uint8_t) 100;
-		//PWM_data_in.payload[1] = (uint8_t) 90;
-		//PWM_data_in.payload[2] = (uint8_t) 80;
-		//PWM_data_in.payload[3] = (uint8_t) 70;
-		//PWM_data_in.payload[4] = (uint8_t) 60;
-		//PWM_data_in.length = 5;
+        test_constant[0] = (test_constant[0] + 10) % 101;
+        test_constant[1] = (test_constant[1] + 10) % 101;
+        test_constant[2] = (test_constant[2] + 10) % 101;
+        test_constant[3] = (test_constant[3] + 10) % 101;
+        test_constant[4] = (test_constant[4] + 10) % 101;
+        
+        PWM_data_in.payload[0] = test_constant[0];
+		PWM_data_in.payload[1] = test_constant[1];
+		PWM_data_in.payload[2] = test_constant[2];
+		PWM_data_in.payload[3] = test_constant[3];
+		PWM_data_in.payload[4] = test_constant[4];
+		PWM_data_in.length = 5;
+
 		
 		
 		//// Disabled for debugging
@@ -891,22 +902,22 @@ static void pwm_init(void)
     ch_cfg3.hpoint = 0;
     
     ledc_channel_config_t ch_cfg4 = {};
-    ch_cfg3.gpio_num = PWM_GPIO_4;
-    ch_cfg3.speed_mode = PWM_MODE;
-    ch_cfg3.channel = PWM_CHANNEL_3;
-    ch_cfg3.intr_type = LEDC_INTR_DISABLE;
-    ch_cfg3.timer_sel = PWM_TIMER;
-    ch_cfg3.duty = 0;
-    ch_cfg3.hpoint = 0;
+    ch_cfg4.gpio_num = PWM_GPIO_4;
+    ch_cfg4.speed_mode = PWM_MODE;
+    ch_cfg4.channel = PWM_CHANNEL_3;
+    ch_cfg4.intr_type = LEDC_INTR_DISABLE;
+    ch_cfg4.timer_sel = PWM_TIMER;
+    ch_cfg4.duty = 0;
+    ch_cfg4.hpoint = 0;
     
     ledc_channel_config_t ch_cfg5 = {};
-    ch_cfg3.gpio_num = PWM_GPIO_5;
-    ch_cfg3.speed_mode = PWM_MODE;
-    ch_cfg3.channel = PWM_CHANNEL_4;
-    ch_cfg3.intr_type = LEDC_INTR_DISABLE;
-    ch_cfg3.timer_sel = PWM_TIMER;
-    ch_cfg3.duty = 0;
-    ch_cfg3.hpoint = 0;
+    ch_cfg5.gpio_num = PWM_GPIO_5;
+    ch_cfg5.speed_mode = PWM_MODE;
+    ch_cfg5.channel = PWM_CHANNEL_4;
+    ch_cfg5.intr_type = LEDC_INTR_DISABLE;
+    ch_cfg5.timer_sel = PWM_TIMER;
+    ch_cfg5.duty = 0;
+    ch_cfg5.hpoint = 0;
 
     ESP_ERROR_CHECK(ledc_timer_config(&timer_cfg));
     ESP_ERROR_CHECK(ledc_channel_config(&ch_cfg1));
@@ -961,36 +972,39 @@ static void pwm_handler(void *pvParameters) {
 	uint8_t percent5 = 100;
 	*/
 	
-	PWMMessage activation;
+	PWMMessage activation = {};
 	uint8_t testPercent = 50;
 
 	
 	while(1) {
 		
-		xQueuePeek(PWMQueue, &activation, 0);
+		//xQueuePeek(PWMQueue, &activation, 0);
 		
-		if (activation.length == 5) {
-			set_pwm_percent(activation.payload[0], activation.payload[1], activation.payload[2], activation.payload[3], activation.payload[4]);
+		if (xQueueReceive(PWMQueue, &activation, portMAX_DELAY) == pdTRUE) {
 			
-			int64_t pwm_applied_us = esp_timer_get_time();
-			int64_t latency_us = pwm_applied_us - activation.rx_time_us;
-			ESP_LOGI("PWM Task", "PWM latency: %lld us (%.3f ms)",
-			         latency_us, latency_us / 1000.0);
-		}
-		else {
-			ESP_LOGE("PWM Task: ", "PWM Task recieved incomplete activation data.\n");
+			if (activation.length == 5) {
+				set_pwm_percent(activation.payload[0], activation.payload[1], activation.payload[2], activation.payload[3], activation.payload[4]);
+				
+				int64_t pwm_applied_us = esp_timer_get_time();
+				int64_t latency_us = pwm_applied_us - activation.rx_time_us;
+				ESP_LOGI("PWM Task", "PWM latency: %lld us (%.3f ms)",
+				         latency_us, latency_us / 1000.0);
+			}
+			else {
+				ESP_LOGE("PWM Task: ", "PWM Task recieved incomplete activation data.\n");
+				
+				int64_t pwm_applied_us = esp_timer_get_time();
+				int64_t latency_us = pwm_applied_us - activation.rx_time_us;
+				ESP_LOGI("PWM Task", "PWM latency: %lld us (%.3f ms)",
+				         latency_us, latency_us / 1000.0);
+			}
 			
-			int64_t pwm_applied_us = esp_timer_get_time();
-			int64_t latency_us = pwm_applied_us - activation.rx_time_us;
-			ESP_LOGI("PWM Task", "PWM latency: %lld us (%.3f ms)",
-			         latency_us, latency_us / 1000.0);
+			// Hard coding for debugging:
+			//set_pwm_percent(testPercent, testPercent, testPercent, testPercent, testPercent);
+			ESP_LOGI("PWM Task: ", "PWM Set to: %d, %d, %d, %d, %d.\n", activation.payload[0], activation.payload[1], activation.payload[2], activation.payload[3], activation.payload[4]);
+			
+			//vTaskDelay(pdMS_TO_TICKS(500));
 		}
-		
-		// Hard coding for debugging:
-		//set_pwm_percent(testPercent, testPercent, testPercent, testPercent, testPercent);
-		ESP_LOGI("PWM Task: ", "PWM Set to: %d, %d, %d, %d, %d.\n", activation.payload[0], activation.payload[1], activation.payload[2], activation.payload[3], activation.payload[4]);
-		
-		vTaskDelay(pdMS_TO_TICKS(500));
 	}
 }
 
@@ -1035,15 +1049,15 @@ extern "C" void app_main(void)
     
 	
 	//// Create GPS UART Task
-	uart_init();
-    xTaskCreate(uart_task, "uart_task", 4096, NULL, 5, NULL);
+	//uart_init();
+    //xTaskCreate(uart_task, "uart_task", 4096, NULL, 5, NULL);
     
     
     
     
     //// Create ESP-RPI UART Task
-    //uart_init_2();
-    //xTaskCreate(uart_task_2, "uart2_task", 4096, nullptr, 5, nullptr);
+    uart_init_2();
+    xTaskCreate(uart_task_2, "uart2_task", 4096, nullptr, 5, nullptr);
 	
     
 
