@@ -39,8 +39,8 @@
 
 #define UART2_PORT_NUM      UART_NUM_2
 #define UART2_BAUD_RATE     115200
-#define UART2_TX_PIN        21   // U2TXD on ESP32-S3-DevKitC-1
-#define UART2_RX_PIN        47   // U2RXD on ESP32-S3-DevKitC-1
+#define UART2_TX_PIN        48   // U2TXD on ESP32-S3-DevKitC-1
+#define UART2_RX_PIN        21   // U2RXD on ESP32-S3-DevKitC-1
 #define UART2_BUF_SIZE      1024
 
 #define PIN_NUM_MOSI 11
@@ -363,11 +363,12 @@ static void uart_init_2(void)
 //    ESP_ERROR_CHECK(uart_set_loop_back(UART2_PORT_NUM, true));
 }
 
+
 // ESP-RPI Task
 static void uart_task_2(void *pvParameters)
 {
 	// For debugging
-	uint8_t test_constant[5] = {0, 0, 0, 0, 0};
+	//uint8_t test_constant[5] = {0, 0, 0, 0, 0};
 	
 	uint16_t TOF_data [16] = {0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1};
 	float IMU_data [6] = {0, 23, 0, 0, 0, 0};
@@ -383,6 +384,9 @@ static void uart_task_2(void *pvParameters)
     TOFMessage TOF_data_out;
     PWMMessage PWM_data_in;
     
+    
+    
+    vTaskDelay(pdMS_TO_TICKS(90000));
 
 
 
@@ -391,8 +395,8 @@ static void uart_task_2(void *pvParameters)
 		
         size_t buffered_len2 = 0;
         
-
-
+		
+		
         // Retrieve IMU data from queue
         xQueuePeek(IMUQueue, &IMU_data_out, 0);
         
@@ -424,7 +428,7 @@ static void uart_task_2(void *pvParameters)
 			GPS_data[1] = GPS_data_out.payload[1];
 		}
 		
-		ESP_LOGI(TAG, "GP to RPI: %s %f %f", GPS_time, GPS_data_out.payload[0], GPS_data_out.payload[1]);
+		//ESP_LOGI(TAG, "GP to RPI: %s %f %f", GPS_time, GPS_data_out.payload[0], GPS_data_out.payload[1]);
 		
 		
 		// Retrieve TOF data from queue
@@ -448,7 +452,7 @@ static void uart_task_2(void *pvParameters)
                            "TOF: %u, %u, %u, %u, %u, %u, %u, %u, "
                            "%u, %u, %u, %u, %u, %u, %u, %u; "
                            "IMU: %.2f, %.2f, %.2f, %.2f, %.2f, %.2f; "
-                           "GPS: %s, %.7f, %.7f\n",
+                           "GPS: %.7f, %.7f\n",
 
                            inc,
                            TOF_data[0], TOF_data[1], TOF_data[2], TOF_data[3],
@@ -458,7 +462,7 @@ static void uart_task_2(void *pvParameters)
 
                            IMU_data[0], IMU_data[1], IMU_data[2], IMU_data[3], IMU_data[4], IMU_data[5],
 
-                           GPS_time, GPS_data[0], GPS_data[1]);
+                           GPS_data[0], GPS_data[1]);
 
         int written = uart_write_bytes(UART2_PORT_NUM, (const char *)msg, etl::strlen(msg));
         
@@ -479,6 +483,8 @@ static void uart_task_2(void *pvParameters)
 
         // NOTE: use %zu for size_t in C++
         std::printf("Buffer 2 Length: %zu\n", buffered_len2);
+        
+        ESP_LOGI(TAG, "Raw Data: %s", (char*)received_data);
 
         if (len > 0) {
 			// Display recieved data in terminal
@@ -496,6 +502,7 @@ static void uart_task_2(void *pvParameters)
 		
 		    int parsed = sscanf((char *)received_data, "%d,%d,%d,%d,%d",
 		                        &p1, &p2, &p3, &p4, &p5);
+		    //ESP_LOGI(TAG, "Raw Data: %s", (char*)received_data);
 		
 		    if (parsed == 5) {
 		        PWM_data_in.length = 5;
@@ -510,7 +517,7 @@ static void uart_task_2(void *pvParameters)
 		
 		
 				// Display what was parsed
-				ESP_LOGI(TAG, "Raw Data: %s", (char*)received_data);
+				//ESP_LOGI(TAG, "Raw Data: %s", (char*)received_data);
 		        ESP_LOGI(TAG, "Parsed: %d %d %d %d %d", p1, p2, p3, p4, p5);
 		    }
 		    else {
@@ -542,19 +549,20 @@ static void uart_task_2(void *pvParameters)
         
         // Testing hard coding:
         
-        test_constant[0] = (test_constant[0] + 10) % 101;
-        test_constant[1] = (test_constant[1] + 10) % 101;
-        test_constant[2] = (test_constant[2] + 10) % 101;
-        test_constant[3] = (test_constant[3] + 10) % 101;
-        test_constant[4] = (test_constant[4] + 10) % 101;
         
-        PWM_data_in.payload[0] = test_constant[0];
-		PWM_data_in.payload[1] = test_constant[1];
-		PWM_data_in.payload[2] = test_constant[2];
-		PWM_data_in.payload[3] = test_constant[3];
-		PWM_data_in.payload[4] = test_constant[4];
-		PWM_data_in.length = 5;
-
+        //test_constant[0] = (test_constant[0] + 10) % 101;
+        //test_constant[1] = (test_constant[1] + 10) % 101;
+        //test_constant[2] = (test_constant[2] + 10) % 101;
+        //test_constant[3] = (test_constant[3] + 10) % 101;
+        //test_constant[4] = (test_constant[4] + 10) % 101;
+        
+        //PWM_data_in.payload[0] = test_constant[0];
+		//PWM_data_in.payload[1] = test_constant[1];
+		//PWM_data_in.payload[2] = test_constant[2];
+		//PWM_data_in.payload[3] = test_constant[3];
+		//PWM_data_in.payload[4] = test_constant[4];
+		//PWM_data_in.length = 5;
+		
 		
 		
 		//// Disabled for debugging
@@ -567,8 +575,59 @@ static void uart_task_2(void *pvParameters)
 
 }
 
+/*
+static void uart_task_2(void *pvParameters)
+{
+    //uint8_t received_data[256];
+    uint16_t TOF_data [16] = {0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1};
+	float IMU_data [6] = {0, 23, 0, 0, 0, 0};
+	double GPS_data [2] = {42.3588337, -71.0578303};
+	char GPS_time [16] = "30301.00";
+    uint8_t received_data[256];
+    uint8_t msg[256];
+    int inc = 0;
 
+    while (1) {
+		inc = (inc + 1) % 101;
+        int msg_len = snprintf((char *)msg, sizeof(msg),
+                           "Inc: %d; "
+                           "TOF: %u, %u, %u, %u, %u, %u, %u, %u, "
+                           "%u, %u, %u, %u, %u, %u, %u, %u; "
+                           "IMU: %.2f, %.2f, %.2f, %.2f, %.2f, %.2f; "
+                           "GPS: %.7f, %.7f\n",
 
+                           inc,
+                           TOF_data[0], TOF_data[1], TOF_data[2], TOF_data[3],
+                           TOF_data[4], TOF_data[5], TOF_data[6], TOF_data[7],
+                           TOF_data[8], TOF_data[9], TOF_data[10], TOF_data[11],
+                           TOF_data[12], TOF_data[13], TOF_data[14], TOF_data[15],
+
+                           IMU_data[0], IMU_data[1], IMU_data[2], IMU_data[3], IMU_data[4], IMU_data[5],
+
+                           GPS_data[0], GPS_data[1]);
+
+        int written = uart_write_bytes(UART2_PORT_NUM, (const char *)msg, etl::strlen(msg));
+		
+		
+        int len = uart_read_bytes(
+            UART2_PORT_NUM,
+            received_data,
+            sizeof(received_data) - 1,
+            100 / portTICK_PERIOD_MS
+        );
+
+        if (len > 0) {
+            received_data[len] = '\0';
+            ESP_LOGI(TAG, "RX2 %d bytes: %s", len, (char *)received_data);
+        } else {
+            ESP_LOGI(TAG, "No data received");
+        }
+        
+        
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+*/
 
 
 
@@ -589,6 +648,7 @@ static void imu_task(void *pvParameters) {
 	IMUMessage IMU_data_in;
 
 	//// IMU Tasks
+	ESP_LOGI(TAG, "Test 1");
 	bool imu_ok = imu.initialize();
 	if (!imu_ok) {
 	    ESP_LOGE(TAG, "BNO08x init failure, continuing without IMU");
@@ -596,7 +656,7 @@ static void imu_task(void *pvParameters) {
 	if (imu_ok) {
 		ESP_LOGI(TAG, "BNO08x initialized correctly");
 	}
-
+	ESP_LOGI(TAG, "Test 2");
 	
 	
 	// Enable useful reports
@@ -607,7 +667,7 @@ static void imu_task(void *pvParameters) {
     while (true) {
 		got_new_imu_sample = false;
 		
-		
+		ESP_LOGI(TAG, "IMU status: %d", imu_ok);
 		if (imu_ok && imu.data_available()) {
 			// get orientation
 			if (imu.rpt.rv.has_new_data()) {
@@ -1034,11 +1094,11 @@ extern "C" void app_main(void)
 	
 
     //// Create imu task
-    //xTaskCreate(imu_task, "imu_task", 4096, nullptr, 10, nullptr);
+    xTaskCreate(imu_task, "imu_task", 4096, nullptr, 10, nullptr);
  	
  	
     //// Create tof task
-    //xTaskCreate(tof_task, "tof_task", 4096, NULL, 10, NULL);
+    xTaskCreate(tof_task, "tof_task", 4096, NULL, 10, NULL);
     
     
     
