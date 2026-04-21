@@ -63,7 +63,7 @@
 #define I2C_MASTER_FREQ_HZ   400000   // u-blox supports 400 kHz
 #define I2C_MASTER_TIMEOUT_MS 1000
 
-//#define UBLOX_I2C_ADDR       0x42     // 7-bit address
+//#define UBLOX_I2C_ADDR       0x42
 #define UBLOX_I2C_ADDR 0x21
 
 #define PWM_GPIO_1        35
@@ -223,18 +223,16 @@ bool parse_rmc_minimal(const char *line, double &lat, double &lon, char *time_ou
 // GPS UART initialization
 static void uart_init(void)
 {
-    // 1) Install driver with BOTH RX and TX buffers
     ESP_ERROR_CHECK(uart_driver_install(
         UART_PORT_NUM,
-        UART_BUF_SIZE * 2,   // RX buffer
-        UART_BUF_SIZE * 2,   // TX buffer
+        UART_BUF_SIZE * 2,   // RX
+        UART_BUF_SIZE * 2,   // TX
         10,
         &uart_queue,
         0
     ));
 
-    // 2) Configure UART parameters
-    uart_config_t uart_config{};  // zero-initialize the whole struct
+    uart_config_t uart_config{};  // zero-initialize the whole structure
 
     uart_config.baud_rate           = UART_BAUD_RATE;
     uart_config.data_bits           = UART_DATA_8_BITS;
@@ -243,12 +241,11 @@ static void uart_init(void)
     uart_config.flow_ctrl           = UART_HW_FLOWCTRL_DISABLE;
     uart_config.rx_flow_ctrl_thresh = 0;
     uart_config.source_clk          = UART_SCLK_DEFAULT;
-    //uart_config.flags               = 0;   // plus the nested backup struct is 0 as well
+    //uart_config.flags               = 0;
 
 
     ESP_ERROR_CHECK(uart_param_config(UART_PORT_NUM, &uart_config));
 
-    // 3) Route UART signals to the pins
     ESP_ERROR_CHECK(uart_set_pin(
         UART_PORT_NUM,
         UART_TX_PIN,
@@ -258,7 +255,6 @@ static void uart_init(void)
     ));
 
     // internal loopback, so I don't need a wire
-    
     //ESP_ERROR_CHECK(uart_set_loop_back(UART_PORT_NUM, true));
 }
 
@@ -286,7 +282,7 @@ static void uart_task(void *pvParameters)
                 if (line_len < sizeof(line_buffer) - 1) {
                     line_buffer[line_len++] = c;
                 } else {
-                    // overflow protection: reset buffer
+                    
                     line_len = 0;
                 }
 
@@ -324,18 +320,16 @@ static void uart_task(void *pvParameters)
 // ESP-RPI uart init
 static void uart_init_2(void)
 {
-    // 1) Install driver with BOTH RX and TX buffers
     ESP_ERROR_CHECK(uart_driver_install(
         UART2_PORT_NUM,
-        UART2_BUF_SIZE * 2,   // RX buffer
-        UART2_BUF_SIZE * 2,   // TX buffer
+        UART2_BUF_SIZE * 2,   // RX
+        UART2_BUF_SIZE * 2,   // TX
         10,
         &uart2_queue,
         0
     ));
 
-    // 2) Configure UART parameters
-    uart_config_t uart2_config{};  // zero-initialize the whole struct
+    uart_config_t uart2_config{};  // zero-initialize the whole structure
 
     uart2_config.baud_rate           = UART2_BAUD_RATE;
     uart2_config.data_bits           = UART_DATA_8_BITS;
@@ -344,12 +338,12 @@ static void uart_init_2(void)
     uart2_config.flow_ctrl           = UART_HW_FLOWCTRL_DISABLE;
     uart2_config.rx_flow_ctrl_thresh = 0;
     uart2_config.source_clk          = UART_SCLK_DEFAULT;
-    //uart_config.flags               = 0;   // plus the nested backup struct is 0 as well
+    //uart_config.flags               = 0;
 
 
     ESP_ERROR_CHECK(uart_param_config(UART2_PORT_NUM, &uart2_config));
 
-    // 3) Route UART signals to the pins
+
     ESP_ERROR_CHECK(uart_set_pin(
         UART2_PORT_NUM,
         UART2_TX_PIN,
@@ -359,7 +353,7 @@ static void uart_init_2(void)
     ));
 
     // internal loopback, so I don't need a wire
-    
+   
 //    ESP_ERROR_CHECK(uart_set_loop_back(UART2_PORT_NUM, true));
 }
 
@@ -469,7 +463,7 @@ static void uart_task_2(void *pvParameters)
         
         ESP_ERROR_CHECK(uart_get_buffered_data_len(UART2_PORT_NUM, &buffered_len2));
 
-        // Clamp to buffer size so we don't overflow 'data'
+
         if (buffered_len2 > sizeof(received_data)) {
             buffered_len2 = sizeof(received_data);
         }
@@ -481,14 +475,13 @@ static void uart_task_2(void *pvParameters)
             100 / portTICK_PERIOD_MS
         );
 
-        // NOTE: use %zu for size_t in C++
+
         std::printf("Buffer 2 Length: %zu\n", buffered_len2);
         
         ESP_LOGI(TAG, "Raw Data: %s", (char*)received_data);
 
         if (len > 0) {
-			// Display recieved data in terminal
-            // len is an int, so %d is correct
+
             ESP_LOGI(TAG, "RX2 %d bytes", len);
             std::printf("UART2 RX: ");
             std::fwrite(received_data, 1, len, stdout);
@@ -516,7 +509,7 @@ static void uart_task_2(void *pvParameters)
 		       
 		
 		
-				// Display what was parsed
+				// Display parsed data
 				//ESP_LOGI(TAG, "Raw Data: %s", (char*)received_data);
 		        ESP_LOGI(TAG, "Parsed: %d %d %d %d %d", p1, p2, p3, p4, p5);
 		    }
@@ -663,12 +656,13 @@ static void imu_task(void *pvParameters) {
 	imu.rpt.rv.enable(100000UL); // game rotation vector
 	imu.rpt.cal_gyro.enable(100000UL); // calibrated gyro
 
-    // Let FreeRTOS scheduler handle rest
+
     while (true) {
 		got_new_imu_sample = false;
 		
 		ESP_LOGI(TAG, "IMU status: %d", imu_ok);
 		if (imu_ok && imu.data_available()) {
+			
 			// get orientation
 			if (imu.rpt.rv.has_new_data()) {
 				bno08x_euler_angle_t euler = imu.rpt.rv.get_euler();
@@ -833,7 +827,7 @@ extern "C" void tof_task(void *pvParameters) {
 	ESP_ERROR_CHECK(
 		i2c_master_bus_add_device(bus_handle, &dev_cfg, &dev.platform.handle));
 
-	// If LPN is not externally controlled, keep reset_gpio as GPIO_NUM_NC.
+
 	dev.platform.reset_gpio = VL53L5CX_PIN_LPN;
 
 	uint8_t status = 0;
